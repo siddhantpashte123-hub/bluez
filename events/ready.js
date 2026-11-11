@@ -11,7 +11,10 @@ const embeds = require('../utils/embeds');
 const { syncInvites } = require('../commands/invites');
 const voice247 = require('../commands/247vc');
 
+const giveaways = require('../commands/gcreate');
+
 const WATCHDOG_INTERVAL_MS = 60_000;
+const GIVEAWAY_CHECK_MS = 10_000;
 
 /** Sync invites without ever throwing (missing permission is normal). */
 const safeSync = (guild) => syncInvites(guild).catch(() => {});
@@ -67,6 +70,12 @@ module.exports = {
     client.on(Events.InviteCreate, (invite) => invite.guild?.invites && safeSync(invite.guild));
     client.on(Events.GuildCreate, (guild) => safeSync(guild));
     for (const guild of client.guilds.cache.values()) await safeSync(guild);
+
+    /* ---- 3b. Giveaways: end the ones whose time is up (also after a restart) ---- */
+    await giveaways.tick(client).catch((err) => console.error('[Giveaway]', err.message));
+    setInterval(() => {
+      giveaways.tick(client).catch((err) => console.error('[Giveaway]', err.message));
+    }, GIVEAWAY_CHECK_MS);
 
     /* ---- 4. 24/7 voice: rejoin saved channels, then keep checking ---- */
     await voice247.ensureAll(client);

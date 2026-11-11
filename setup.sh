@@ -185,6 +185,18 @@ info "Installing dependencies (npm install)..."
 npm install --omit=dev --no-audit --no-fund || die "npm install failed."
 ok "Dependencies installed."
 
+# FFmpeg is needed by /music. It normally comes with the ffmpeg-static package;
+# if that download failed, fall back to the system package (best effort).
+if ! node -e 'const f=require("ffmpeg-static");process.exit(f&&require("fs").existsSync(f)?0:1)' >/dev/null 2>&1 \
+   && ! command -v ffmpeg >/dev/null 2>&1; then
+  warn "Bundled FFmpeg is not available. Installing the system FFmpeg package for /music..."
+  if can_root && command -v apt-get >/dev/null 2>&1 && $SUDO apt-get install -y -qq ffmpeg >>"$SETUP_LOG" 2>&1; then
+    ok "FFmpeg installed."
+  else
+    warn "Could not install FFmpeg. /music will not work until you run:  sudo apt install -y ffmpeg"
+  fi
+fi
+
 # ------------------------------------------------------------------
 # 3. Bot token -> .env   (the token is never printed or logged)
 # ------------------------------------------------------------------

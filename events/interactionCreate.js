@@ -2,12 +2,17 @@
  * events/interactionCreate.js
  * Routes slash commands to their file in /commands and turns every
  * uncaught error into a red error embed for the user.
- * Also routes the persistent ticket buttons to commands/ticket.js.
+ * Also routes the persistent ticket / giveaway / music buttons to their command file.
  * (Buttons of /help are handled by that command's own collector.)
  */
 const { Events, MessageFlags } = require('discord.js');
 const embeds = require('../utils/embeds');
 const ticket = require('../commands/ticket');
+const giveaway = require('../commands/gcreate');
+const music = require('../commands/music');
+
+/** customId prefix ("ticket_open" -> "ticket") -> module with handleButton(). */
+const BUTTON_HANDLERS = { ticket, giveaway, music };
 
 /** Friendly text for the most common Discord API errors. */
 function describe(err) {
@@ -44,10 +49,13 @@ module.exports = {
   name: Events.InteractionCreate,
 
   async execute(interaction) {
-    // Ticket buttons use fixed IDs so they keep working after a restart.
-    if (interaction.isButton() && interaction.customId.startsWith('ticket_')) {
+    // Persistent buttons (fixed custom IDs, keep working after a restart).
+    if (interaction.isButton()) {
+      const prefix = interaction.customId.split('_')[0];
+      const handler = BUTTON_HANDLERS[prefix];
+      if (!handler) return; // e.g. /help buttons -> handled by that command's collector
       try {
-        await ticket.handleButton(interaction);
+        await handler.handleButton(interaction);
       } catch (err) {
         console.error(`[Button:${interaction.customId}]`, err);
         await sendError(interaction, err);

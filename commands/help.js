@@ -40,7 +40,6 @@ const CATEGORIES = [
     commands: [
       ['/upiqr <upi_id> <amount> <name>', 'Generate a UPI payment QR (auto-splits above ₹2,000).'],
       ['/afk <reason>', 'Set your AFK status. I will tell people who ping you.'],
-      ['/gcreate <name>', 'Create a new Discord server owned by the bot.'],
     ],
   },
   {
@@ -77,6 +76,29 @@ const CATEGORIES = [
       ['/invited <user>', "A member's invite count and invite codes."],
       ['/userinfo [user]', "A member's profile: ID, join date, roles and more."],
       ['/help', 'Open this help menu.'],
+    ],
+  },
+  {
+    emoji: '🎵',
+    name: 'Music',
+    color: embeds.COLORS.cyan,
+    blurb: 'Play songs in your voice channel.',
+    commands: [
+      ['/music play <song>', 'Play a song by name or link, or add it to the queue.'],
+      ['/music pause | resume | skip | stop', 'Control the playback.'],
+      ['/music queue | nowplaying | shuffle', 'See and shuffle the queue.'],
+      ['/music loop <off | track | queue>', 'Repeat the current song or the whole queue.'],
+    ],
+  },
+  {
+    emoji: '🎁',
+    name: 'Giveaways',
+    color: embeds.COLORS.green,
+    blurb: 'Give prizes away with one button.',
+    commands: [
+      ['/gcreate <prize> <duration> [winners] [channel]', 'Start a giveaway, e.g. duration `1d12h`.'],
+      ['/gend [message_id]', 'End a giveaway now and pick the winner(s).'],
+      ['/greroll [message_id] [winners]', 'Pick new winner(s) for an ended giveaway.'],
     ],
   },
   {

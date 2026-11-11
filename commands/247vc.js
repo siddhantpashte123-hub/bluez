@@ -146,6 +146,10 @@ async function startAudioStreamEngine(guild, channelId) {
     heal: () => {
       if (manager.isConnected && !manager.isPlaying) manager.play().catch(() => {});
     },
+    // Hand the connection back to the silent track (used after /music finishes).
+    resubscribe: () => {
+      if (manager.audioPlayer) getVoiceConnection(guild.id)?.subscribe(manager.audioPlayer);
+    },
   };
 }
 
@@ -208,6 +212,10 @@ async function startNativeEngine(guild, channelId) {
     alive: () => !stopped && connection.state.status === VoiceConnectionStatus.Ready,
     heal: () => {
       if (!stopped && player.state.status === AudioPlayerStatus.Idle) playSilence();
+    },
+    // Hand the connection back to the silent track (used after /music finishes).
+    resubscribe: () => {
+      if (!stopped) connection.subscribe(player);
     },
   };
 }
@@ -326,10 +334,24 @@ async function ensureAll(client) {
 /*  Slash command                                                      */
 /* ------------------------------------------------------------------ */
 
+/** Channel ID of the 24/7 channel of a guild, or null when 24/7 mode is off. */
+const savedChannelId = (guildId) => db.get('247vc')[guildId]?.channelId ?? null;
+
+/** After music: let the silent keep-alive track use the voice connection again. */
+function resumeSilence(guildId) {
+  try {
+    sessions.get(guildId)?.resubscribe?.();
+  } catch (err) {
+    console.error('[24/7] Could not resume the silent track:', err.message);
+  }
+}
+
 module.exports = {
   ensure,
   ensureAll,
   scheduleEnsure,
+  savedChannelId,
+  resumeSilence,
 
   data: new SlashCommandBuilder()
     .setName('247')
