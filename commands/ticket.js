@@ -70,8 +70,9 @@ function slug(text) {
 }
 
 /** Is this member staff for tickets? (support role or Manage Channels) */
-function isStaff(member, config) {
+function isStaff(member, config, ticket = null) {
   if (member.permissions?.has(PermissionFlagsBits.ManageChannels)) return true;
+  if (ticket?.hostId && member.id === ticket.hostId) return true; // giveaway host of a prize ticket
   return Boolean(config?.supportRoleId && member.roles?.cache?.has(config.supportRoleId));
 }
 
@@ -97,7 +98,7 @@ async function askToClose(interaction) {
     return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'This command only works inside a ticket channel.')));
   }
   const config = configOf(interaction.guildId);
-  if (interaction.user.id !== ticket.userId && !isStaff(interaction.member, config)) {
+  if (interaction.user.id !== ticket.userId && !isStaff(interaction.member, config, ticket)) {
     return interaction.reply(ephemeral(embeds.error(interaction, 'Not Allowed', 'Only the ticket owner or the support team can close this ticket.')));
   }
   return interaction.reply({
@@ -110,25 +111,34 @@ async function askToClose(interaction) {
 /*  Button: create a ticket                                            */
 /* ------------------------------------------------------------------ */
 
-async function openTicket(interaction) {
+/**
+ * Create a ticket channel for the member who pressed a button.
+ * `prize` is set when a giveaway winner claims a prize (see commands/gcreate.js):
+ *   { prize: 'Nitro', hostId: '123' }  -> works without /ticket setup, the host is added
+ *   to the ticket, and it does not count towards the "one ticket per member" rule.
+ * Returns the new channel, or null when no ticket was created (the user was told why).
+ */
+async function openTicket(interaction, prize = null) {
   const { guild, user } = interaction;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const config = configOf(guild.id);
+  const config = configOf(guild.id) ?? (prize ? { counter: 0, tickets: {} } : null);
   if (!config) {
-    return interaction.editReply({
+    await interaction.editReply({
       embeds: [embeds.error(interaction, 'Tickets Are Not Set Up', 'An admin has to run `/ticket setup` first.')],
     });
+    return null;
   }
 
-  // One open ticket per member (ignore records whose channel was deleted by hand).
-  const existing = Object.entries(config.tickets ?? {}).find(([, t]) => t.userId === user.id);
+  // One open support ticket per member (ignore records whose channel was deleted by hand).
+  const existing = prize ? null : Object.entries(config.tickets ?? {}).find(([, t]) => t.userId === user.id && !t.prize);
   if (existing) {
     const stillThere = await guild.channels.fetch(existing[0]).catch(() => null);
     if (stillThere) {
-      return interaction.editReply({
+      await interaction.editReply({
         embeds: [embeds.warn(interaction, 'You Already Have a Ticket', `Please use your open ticket: ${stillThere}`)],
       });
+      return null;
     }
     db.update('tickets', (data) => {
       delete data[guild.id].tickets[existing[0]];
@@ -137,11 +147,12 @@ async function openTicket(interaction) {
 
   const me = guild.members.me ?? (await guild.members.fetchMe());
   if (!me.permissions.has([PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles])) {
-    return interaction.editReply({
+    await interaction.editReply({
       embeds: [
         embeds.error(interaction, 'I Am Missing Permissions', 'I need the **Manage Channels** and **Manage Roles** permissions to create ticket channels. Please tell an admin.'),
       ],
     });
+    return null;
   }
 
   // Use the configured category if it still exists and has room.
@@ -159,20 +170,23 @@ async function openTicket(interaction) {
     { id: me.id, allow: BOT_PERMS },
   ];
   if (supportRole) overwrites.push({ id: supportRole.id, allow: MEMBER_PERMS });
+  // Prize tickets: the giveaway host can always see the ticket.
+  const host = prize?.hostId && prize.hostId !== user.id ? await guild.members.fetch(prize.hostId).catch(() => null) : null;
+  if (host) overwrites.push({ id: host.id, allow: MEMBER_PERMS });
 
   let channel;
   try {
     channel = await guild.channels.create({
-      name: `ticket-${slug(user.username)}-${String(number).padStart(4, '0')}`,
+      name: `${prize ? 'prize' : 'ticket'}-${slug(user.username)}-${String(number).padStart(4, '0')}`,
       type: ChannelType.GuildText,
       parent,
-      topic: `Ticket #${number} • opened by ${user.tag} (${user.id})`,
+      topic: `${prize ? `Prize claim: ${prize.prize.slice(0, 100)}` : `Ticket #${number}`} • opened by ${user.tag} (${user.id})`,
       permissionOverwrites: overwrites,
       reason: `Ticket opened by ${user.tag}`,
     });
   } catch (err) {
     console.error('[Ticket] create failed:', err.code ?? '', err.message);
-    return interaction.editReply({
+    await interaction.editReply({
       embeds: [
         embeds.error(
           interaction,
@@ -183,41 +197,45 @@ async function openTicket(interaction) {
         ),
       ],
     });
+    return null;
   }
 
   db.update('tickets', (data) => {
-    const g = data[guild.id];
+    const g = (data[guild.id] ??= { counter: 0, tickets: {} });
     g.counter = number;
-    (g.tickets ??= {})[channel.id] = { userId: user.id, number, openedAt: Date.now() };
+    (g.tickets ??= {})[channel.id] = { userId: user.id, number, openedAt: Date.now(), ...(prize ? { prize: prize.prize, hostId: host?.id ?? null } : {}) };
   });
 
   // Welcome message inside the ticket (pings the opener and the support role once).
   await channel
     .send({
-      content: `${user}${supportRole ? ` ${supportRole}` : ''}`,
+      content: `${user}${host ? ` ${host}` : ''}${supportRole ? ` ${supportRole}` : ''}`,
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.blurple,
-          title: `${embeds.e('gift')} Ticket #${number}`,
-          description:
-            `Welcome ${user}! ${embeds.e('bow')}\n` +
-            'Please describe what you need and the support team will be with you shortly.',
+          title: prize ? `${embeds.e('giftLegend')} Prize Claim` : `${embeds.e('gift')} Ticket #${number}`,
+          description: prize
+            ? `Congratulations ${user}! ${embeds.e('bow')}\nYou won **${prize.prize}**. The host will hand over your prize here.`
+            : `Welcome ${user}! ${embeds.e('bow')}\n` + 'Please describe what you need and the support team will be with you shortly.',
           fields: [
-            { name: '👤 Opened by', value: `${user}`, inline: true },
-            { name: '🛟 Support', value: supportRole ? `${supportRole}` : 'Server staff', inline: true },
+            { name: prize ? '🏆 Winner' : '👤 Opened by', value: `${user}`, inline: true },
+            prize
+              ? { name: '🎙️ Giveaway Host', value: host ? `${host}` : 'Server staff', inline: true }
+              : { name: '🛟 Support', value: supportRole ? `${supportRole}` : 'Server staff', inline: true },
             { name: '🔒 Closing', value: 'Press the button below or use `/ticket close`.' },
           ],
           thumbnail: user.displayAvatarURL({ size: 256 }),
         }),
       ],
       components: [closeRow()],
-      allowedMentions: { users: [user.id], roles: supportRole ? [supportRole.id] : [] },
+      allowedMentions: { users: host ? [user.id, host.id] : [user.id], roles: supportRole ? [supportRole.id] : [] },
     })
     .catch((err) => console.error('[Ticket] welcome message failed:', err.message));
 
   await interaction.editReply({
     embeds: [embeds.success(interaction, 'Ticket Created', `Your ticket is ready: ${channel}`)],
   });
+  return channel;
 }
 
 /* ------------------------------------------------------------------ */
@@ -230,7 +248,7 @@ async function confirmClose(interaction) {
   if (!ticket) {
     return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'This channel is not an open ticket.')));
   }
-  if (interaction.user.id !== ticket.userId && !isStaff(interaction.member, configOf(guild.id))) {
+  if (interaction.user.id !== ticket.userId && !isStaff(interaction.member, configOf(guild.id), ticket)) {
     return interaction.reply(ephemeral(embeds.error(interaction, 'Not Allowed', 'Only the ticket owner or the support team can close this ticket.')));
   }
 
@@ -279,6 +297,7 @@ async function handleButton(interaction) {
 
 module.exports = {
   handleButton,
+  openTicket,
 
   data: new SlashCommandBuilder()
     .setName('ticket')
@@ -391,7 +410,7 @@ module.exports = {
     if (!ticket) {
       return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'This command only works inside a ticket channel.')));
     }
-    if (!isStaff(interaction.member, configOf(guild.id))) {
+    if (!isStaff(interaction.member, configOf(guild.id), ticket)) {
       return interaction.reply(ephemeral(embeds.error(interaction, 'Not Allowed', 'Only the support team can add or remove members.')));
     }
 

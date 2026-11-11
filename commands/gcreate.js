@@ -6,7 +6,9 @@
  * /greroll [message_id] [winners]                   pick new winner(s)     (commands/greroll.js)
  *
  * Members join with the button under the giveaway message (press it
- * again to leave). The button uses a fixed custom ID and is handled
+ * again to leave). When it ends, the winner announcement gets a
+ * "Claim Prize" button that ONLY the winner(s) can use; it opens a
+ * private ticket with the giveaway host (see commands/ticket.js). The button uses a fixed custom ID and is handled
  * through events/interactionCreate.js, and the end time is checked by
  * a timer started in events/ready.js – so giveaways survive restarts.
  *
@@ -26,6 +28,7 @@ const {
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const tickets = require('./ticket');
 
 const MIN_DURATION_MS = 10_000; // 10 seconds
 const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -106,6 +109,13 @@ function enterRow(g) {
   );
 }
 
+/** "Claim Prize" button under the winner announcement (only winners can use it). */
+function claimRow(messageId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`giveaway_claim_${messageId}`).setLabel('Claim Prize (Open Ticket)').setEmoji('🎫').setStyle(ButtonStyle.Success),
+  );
+}
+
 /** Fetch the giveaway message (null if the channel/message is gone). */
 async function fetchMessage(client, g, messageId) {
   try {
@@ -167,10 +177,11 @@ async function endGiveaway(client, messageId) {
             ? embeds.make(client, {
                 color: embeds.COLORS.green,
                 title: `${embeds.e('giftLegend')} Congratulations!`,
-                description: `${mentions(winnerIds)} won **${updated.prize}**! ${embeds.e('bow')}\nContact <@${updated.hostId}> to claim your prize.`,
+                description: `${mentions(winnerIds)} won **${updated.prize}**! ${embeds.e('bow')}\nPress the button below to open a private ticket and claim your prize.`,
               })
             : embeds.warn(client, 'No Winner', `Nobody entered the giveaway for **${updated.prize}**.`),
         ],
+        components: winnerIds.length ? [claimRow(messageId)] : [],
         allowedMentions: { users: winnerIds },
       })
       .catch((err) => console.error('[Giveaway] announce failed:', err.message));
@@ -222,7 +233,43 @@ async function tick(client) {
 /*  Button: enter / leave                                              */
 /* ------------------------------------------------------------------ */
 
+/** Winner pressed "Claim Prize": open a private ticket with the giveaway host. */
+async function handleClaim(interaction) {
+  const messageId = interaction.customId.slice('giveaway_claim_'.length);
+  const g = db.get('giveaways')[messageId];
+  const userId = interaction.user.id;
+
+  if (!g?.ended) {
+    return interaction.reply(ephemeral(embeds.error(interaction, 'Giveaway Not Found', 'This giveaway is too old or no longer exists.')));
+  }
+  // Only the current winner(s) may claim.
+  if (!g.winnerIds.includes(userId)) {
+    return interaction.reply(ephemeral(embeds.error(interaction, 'Winners Only', `Only the winner of **${g.prize}** can open this ticket.`)));
+  }
+  // One claim ticket per winner.
+  const claimedChannelId = g.claimed?.[userId];
+  if (claimedChannelId) {
+    const channel = await interaction.guild.channels.fetch(claimedChannelId).catch(() => null);
+    return interaction.reply(
+      ephemeral(
+        channel
+          ? embeds.warn(interaction, 'Already Claimed', `Your prize ticket is here: ${channel}`)
+          : embeds.warn(interaction, 'Already Claimed', `You already opened a ticket for this prize. Contact <@${g.hostId}> if you still need help.`),
+      ),
+    );
+  }
+
+  const channel = await tickets.openTicket(interaction, { prize: g.prize, hostId: g.hostId });
+  if (channel) {
+    db.update('giveaways', (data) => {
+      (data[messageId].claimed ??= {})[userId] = channel.id;
+    });
+  }
+  return undefined;
+}
+
 async function handleButton(interaction) {
+  if (interaction.customId.startsWith('giveaway_claim_')) return handleClaim(interaction);
   if (interaction.customId !== 'giveaway_enter') return;
   const messageId = interaction.message.id;
   const g = db.get('giveaways')[messageId];
@@ -266,6 +313,7 @@ async function handleButton(interaction) {
 
 module.exports = {
   handleButton,
+  claimRow,
   tick,
   endGiveaway,
   rerollGiveaway,

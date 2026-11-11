@@ -185,6 +185,7 @@ npm start      # same as: node index.js
 - `/gcreate prize:Nitro duration:1d12h winners:2` posts the giveaway. Durations use `s`, `m`, `h`, `d`, `w` (10 seconds to 30 days).
 - Members press **Enter Giveaway** to join and press it again to leave.
 - When the time is up the bot picks random winners, edits the message and pings them. This also works if the bot was restarted in between.
+- The winner announcement has a **Claim Prize** button. Only the winner(s) can use it. It opens a private ticket with the winner and the giveaway host (plus the support role if `/ticket setup` was used). The bot needs **Manage Channels** and **Manage Roles** for this.
 - `/gend` ends a giveaway early. `/greroll` picks new winners; ended giveaways can be rerolled for 7 days.
 - Without a `message_id`, `/gend` and `/greroll` use the newest giveaway in the current channel.
 
@@ -195,7 +196,8 @@ npm start      # same as: node index.js
 - The bot leaves 3 minutes after the queue ends. If 24/7 mode is on, music plays in the 24/7 channel and the bot stays there afterwards.
 - **yt-dlp** is downloaded automatically into `bin/` the first time a song is played, and refreshed weekly. **FFmpeg** comes from the `ffmpeg-static` package; if that is missing, install it with `sudo apt install -y ffmpeg`.
 - Playlists are not supported; a playlist link plays only the linked song.
-- YouTube often blocks requests from VPS / datacenter IP addresses ("Sign in to confirm you're not a bot"). If that happens, song names fall back to SoundCloud, and SoundCloud links keep working.
+- YouTube often blocks requests from VPS / datacenter IP addresses ("Sign in to confirm you're not a bot", HTTP 403). When a song cannot be loaded, the bot plays the closest match from SoundCloud instead and shows the reason. SoundCloud links always skip YouTube.
+- Optional: to make YouTube work on a blocked server, export your YouTube cookies in Netscape format to a file named `cookies.txt` next to `index.js` and restart the bot. Use a spare Google account, because YouTube can restrict accounts used this way.
 
 ## 🎫 Ticket system
 

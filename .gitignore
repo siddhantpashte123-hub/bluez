@@ -5,3 +5,4 @@ data/*.tmp
 data/*.corrupt-*
 data/silence.wav
 bin/
+cookies.txt

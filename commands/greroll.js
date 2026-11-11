@@ -39,9 +39,10 @@ module.exports = {
         embeds.make(interaction, {
           color: embeds.COLORS.green,
           title: `${embeds.e('giftLegend')} New Winner${winnerIds.length === 1 ? '' : 's'}!`,
-          description: `${list} won **${g.prize}**! ${embeds.e('bow')}\nContact <@${g.hostId}> to claim your prize.`,
+          description: `${list} won **${g.prize}**! ${embeds.e('bow')}\nPress the button below to open a private ticket and claim your prize.`,
         }),
       ],
+      components: [giveaways.claimRow(messageId)],
       allowedMentions: { users: winnerIds },
     });
   },

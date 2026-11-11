@@ -56,6 +56,8 @@ const YTDLP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // re-download weekly (YouTube
 const BIN_DIR = path.join(__dirname, '..', 'bin');
 const YTDLP_FILE = path.join(BIN_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 
+const COOKIES_FILE = path.join(__dirname, '..', 'cookies.txt');
+
 /** guildId -> queue */
 const queues = new Map();
 
@@ -125,6 +127,11 @@ function ensureYtDlp() {
     // Newer yt-dlp versions need a JavaScript runtime for YouTube – we already have Node.js.
     const help = spawnSync(file, ['--help'], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     ytdlpExtraArgs = help.stdout?.includes('--js-runtimes') ? ['--js-runtimes', `node:${process.execPath}`] : [];
+    // Tell yt-dlp where our ffmpeg is (it needs it for some stream types, e.g. HLS).
+    const ffmpeg = ffmpegPath();
+    if (ffmpeg && path.isAbsolute(ffmpeg)) ytdlpExtraArgs.push('--ffmpeg-location', ffmpeg);
+    // Optional: a cookies.txt next to index.js helps when YouTube blocks the server ("Sign in to confirm...").
+    if (fs.existsSync(COOKIES_FILE)) ytdlpExtraArgs.push('--cookies', COOKIES_FILE);
     return file;
   })().catch((err) => {
     ytdlpPromise = null; // allow a retry on the next /music play
@@ -143,13 +150,13 @@ function runYtDlp(file, args) {
   });
 }
 
-/** Turn "song name" or a link into a track object. */
-async function resolveTrack(query, requestedBy) {
+/** Turn "song name" or a link into a track object. `attempts` overrides where to look. */
+async function resolveTrack(query, requestedBy, attempts = null) {
   const file = await ensureYtDlp();
   const base = ['--dump-single-json', '--no-playlist', '--no-warnings', '--skip-download'];
   const isUrl = /^https?:\/\/\S+$/i.test(query);
   // Names: YouTube first, SoundCloud as a backup (YouTube sometimes blocks VPS IPs).
-  const attempts = isUrl ? [query] : [`ytsearch1:${query}`, `scsearch1:${query}`];
+  attempts ??= isUrl ? [query] : [`ytsearch1:${query}`, `scsearch1:${query}`];
 
   let lastError;
   for (const target of attempts) {
@@ -177,19 +184,23 @@ async function resolveTrack(query, requestedBy) {
 function createStream(track, ytdlpFile) {
   const downloader = spawn(
     ytdlpFile,
-    [...ytdlpExtraArgs, '-f', 'bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings', track.url],
+    [...ytdlpExtraArgs, '-f', 'bestaudio[ext=webm]/bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings', track.url],
     { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
   );
   const encoder = spawn(
     ffmpegPath(),
     ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-f', 'opus', 'pipe:1'],
-    { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true },
+    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
   );
 
+  // Keep the last error lines of both programs so failures can be explained.
   const stream = { errorText: '', killed: false };
-  downloader.stderr.on('data', (chunk) => {
-    stream.errorText = (stream.errorText + chunk).slice(-400);
-  });
+  for (const [name, child] of [['yt-dlp', downloader], ['ffmpeg', encoder]]) {
+    child.stderr.on('data', (chunk) => {
+      stream.errorText = `${stream.errorText}[${name}] ${chunk}`.slice(-600);
+    });
+    child.stderr.on('error', () => {});
+  }
   // Broken pipes are normal when a song is skipped – never let them crash the bot.
   for (const emitter of [downloader, encoder, downloader.stdout, encoder.stdin, encoder.stdout]) emitter.on('error', () => {});
   downloader.stdout.pipe(encoder.stdin);
@@ -339,6 +350,50 @@ async function playNext(queue) {
   }
 }
 
+/** Short, readable reason for a failed download (last meaningful line of the tool output). */
+function shortReason(text) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  // yt-dlp reports the real cause as "ERROR: ..."; ffmpeg errors are only a consequence of it.
+  const line =
+    lines.find((l) => /^(\[yt-dlp\] )?ERROR:/.test(l)) ?? [...lines].reverse().find((l) => /error/i.test(l)) ?? lines[0] ?? 'no audio received';
+  return line.replace(/```/g, '').slice(0, 250);
+}
+
+/**
+ * A song could not be downloaded (most often: YouTube blocks the server's IP).
+ * Look the same title up on SoundCloud and put that at the front of the queue.
+ */
+async function recoverTrack(queue, failed, reason) {
+  const fromSoundCloud = /soundcloud\.com/i.test(failed.url);
+  if (!failed.isFallback && !fromSoundCloud && !queue.destroyed) {
+    try {
+      const cleanTitle = failed.title.replace(/#\S+/g, ' ').replace(/\s+/g, ' ').trim();
+      const alternative = await resolveTrack(cleanTitle, failed.requestedBy, [`scsearch1:${cleanTitle}`]);
+      alternative.isFallback = true;
+      if (queue.destroyed) return;
+      queue.tracks.unshift(alternative);
+      announce(queue, {
+        embeds: [
+          embeds.warn(queue.client, 'Source Blocked, Trying SoundCloud', `**${failed.title}** could not be loaded from its original site.\nPlaying the closest SoundCloud match instead: ${link(alternative)}`, {
+            fields: [{ name: '🧾 Reason', value: `\`\`\`${shortReason(reason)}\`\`\`` }],
+          }),
+        ],
+      });
+      return;
+    } catch (err) {
+      console.error('[Music] SoundCloud fallback failed:', err.message);
+    }
+  }
+  if (queue.destroyed) return;
+  announce(queue, {
+    embeds: [
+      embeds.error(queue.client, 'Could Not Play Song', `**${failed.title}** could not be loaded, so I skipped it.`, {
+        fields: [{ name: '🧾 Reason', value: `\`\`\`${shortReason(reason)}\`\`\`` }],
+      }),
+    ],
+  });
+}
+
 /** Create the queue + player for a guild on top of a voice connection. */
 function createQueue(interaction, connection, ownConnection) {
   const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
@@ -363,11 +418,15 @@ function createQueue(interaction, connection, ownConnection) {
     // A song that ends almost instantly means the download failed.
     const stream = queue.stream;
     if (stream && !stream.killed && !queue.skipRequested && stream.resource.playbackDuration < 1500 && queue.current) {
-      console.error(`[Music] "${queue.current.title}" failed:`, stream.errorText.trim() || 'no audio received');
-      announce(queue, {
-        embeds: [embeds.error(queue.client, 'Could Not Play Song', `**${queue.current.title}** could not be loaded, so I skipped it.`)],
-      });
+      const failed = queue.current;
+      const reason = stream.errorText.trim() || 'no audio received';
+      console.error(`[Music] "${failed.title}" failed:`, reason);
       queue.skipRequested = true; // do not loop a broken song forever
+      // Try the same song from SoundCloud before giving up, then continue with the queue.
+      recoverTrack(queue, failed, reason)
+        .catch((err) => console.error('[Music] recovery failed:', err.message))
+        .finally(() => playNext(queue).catch((err) => console.error('[Music] playNext failed:', err.message)));
+      return;
     }
     playNext(queue).catch((err) => console.error('[Music] playNext failed:', err.message));
   });
