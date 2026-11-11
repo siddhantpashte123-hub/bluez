@@ -1,0 +1,187 @@
+/**
+ * /help
+ * Premium multi-page help menu with button navigation:
+ *   ◀ Previous | 🏠 Home | ▶ Next | ❌ Close
+ * "⌛ Loading..." first, then the menu. Buttons are disabled after
+ * 60 seconds of inactivity.
+ */
+const {
+  SlashCommandBuilder,
+  InteractionContextType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  MessageFlags,
+} = require('discord.js');
+const embeds = require('../utils/embeds');
+
+const IDLE_MS = 60_000;
+
+/** Category pages (page 0 is the generated "Home" page). */
+const CATEGORIES = [
+  {
+    emoji: '🛡️',
+    name: 'Moderation',
+    color: embeds.COLORS.pink,
+    blurb: 'Keep your server clean and organised.',
+    commands: [
+      ['/purge <amount>', 'Bulk delete up to 100 messages in the current channel.'],
+      ['/channel rename <new_name>', 'Rename the current channel.'],
+      ['/dm <user> <message>', 'Send a direct message to a member through the bot.'],
+      ['/dmall <message>', 'DM an announcement to every member, with live progress.'],
+    ],
+  },
+  {
+    emoji: '🧰',
+    name: 'Utility',
+    color: embeds.COLORS.cyan,
+    blurb: 'Handy everyday tools.',
+    commands: [
+      ['/upiqr <upi_id> <amount> <name>', 'Generate a UPI payment QR (auto-splits above ₹2,000).'],
+      ['/afk <reason>', 'Set your AFK status. I will tell people who ping you.'],
+      ['/gcreate <name>', 'Create a new Discord server owned by the bot.'],
+    ],
+  },
+  {
+    emoji: '🔊',
+    name: 'Voice',
+    color: embeds.COLORS.green,
+    blurb: 'Keep a voice channel alive around the clock.',
+    commands: [
+      ['/247 vc join <voice_channel>', 'Join a voice channel and stay connected 24/7.'],
+      ['/247 vc stop', 'Leave the voice channel and turn 24/7 mode off.'],
+    ],
+  },
+  {
+    emoji: '🤖',
+    name: 'Automation',
+    color: embeds.COLORS.purple,
+    blurb: 'Let the bot react and reply for you.',
+    commands: [
+      ['/autoresponder set <trigger> <response>', 'Reply automatically when a message contains the trigger.'],
+      ['/autoresponder remove <trigger>', 'Delete an auto-response.'],
+      ['/autoresponder list', 'Show all auto-responses of this server.'],
+      ['/auto reacter set <trigger> <emoji>', 'React automatically to messages containing the trigger.'],
+      ['/auto reacter remove <trigger>', 'Delete an auto-reaction.'],
+      ['/auto reacter list', 'Show all auto-reactions of this server.'],
+    ],
+  },
+  {
+    emoji: '📊',
+    name: 'Info',
+    color: embeds.COLORS.gold,
+    blurb: 'Stats, leaderboards and this menu.',
+    commands: [
+      ['/invites', 'Invite leaderboard – top 10 inviters with medals.'],
+      ['/invited <user>', "A member's invite count and invite codes."],
+      ['/help', 'Open this help menu.'],
+    ],
+  },
+];
+
+const TOTAL_PAGES = CATEGORIES.length + 1;
+
+/** Build the embed of one page. */
+function pageEmbed(interaction, page) {
+  if (page === 0) {
+    const commandCount = CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
+    return embeds.make(interaction, {
+      color: embeds.COLORS.blurple,
+      title: `✨ ${interaction.client.user.username} — Help Menu`,
+      description:
+        `Hey ${interaction.user}! 👋 Welcome to the command centre.\n` +
+        'Use the buttons below to browse the categories.\n\u200b',
+      fields: [
+        ...CATEGORIES.map((c, i) => ({
+          name: `${c.emoji} ${c.name}`,
+          value: `${c.blurb}\n\`Page ${i + 2}\` • ${c.commands.length} commands`,
+          inline: true,
+        })),
+        { name: '📈 Stats', value: `**${commandCount}** commands\n**${interaction.client.guilds.cache.size}** servers`, inline: true },
+        { name: '🧭 Navigation', value: '◀ Previous  •  🏠 Home  •  ▶ Next  •  ❌ Close' },
+      ],
+      footer: `Page 1/${TOTAL_PAGES}`,
+    });
+  }
+
+  const category = CATEGORIES[page - 1];
+  return embeds.make(interaction, {
+    color: category.color,
+    title: `${category.emoji} ${category.name} Commands`,
+    description:
+      `*${category.blurb}*\n\n` +
+      category.commands.map(([usage, text]) => `${category.emoji} **\`${usage}\`**\n┗ ${text}`).join('\n\n'),
+    footer: `Page ${page + 1}/${TOTAL_PAGES}`,
+  });
+}
+
+/** Build the navigation row. */
+function buttons(page, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('help_prev').setEmoji('◀️').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId('help_home').setEmoji('🏠').setLabel('Home').setStyle(ButtonStyle.Success).setDisabled(disabled || page === 0),
+    new ButtonBuilder().setCustomId('help_next').setEmoji('▶️').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId('help_close').setEmoji('❌').setLabel('Close').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+  );
+}
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('✨ Open the interactive help menu.')
+    .setContexts(InteractionContextType.Guild),
+
+  async execute(interaction) {
+    // "Animation": loading embed first, then edit into the real menu.
+    await interaction.reply({ embeds: [embeds.loading(interaction, 'Loading help menu...')] });
+    await embeds.sleep(900);
+
+    let page = 0;
+    const message = await interaction.editReply({ embeds: [pageEmbed(interaction, page)], components: [buttons(page)] });
+
+    const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, idle: IDLE_MS });
+
+    collector.on('collect', async (click) => {
+      try {
+        // Only the person who opened the menu may use it.
+        if (click.user.id !== interaction.user.id) {
+          return void (await click.reply({
+            embeds: [embeds.error(interaction, 'Not Your Menu', 'Run `/help` to open your own help menu.')],
+            flags: MessageFlags.Ephemeral,
+          }));
+        }
+
+        switch (click.customId) {
+          case 'help_prev':
+            page = (page - 1 + TOTAL_PAGES) % TOTAL_PAGES;
+            break;
+          case 'help_next':
+            page = (page + 1) % TOTAL_PAGES;
+            break;
+          case 'help_home':
+            page = 0;
+            break;
+          case 'help_close':
+            collector.stop('closed');
+            return void (await click.update({
+              embeds: [embeds.info(interaction, '👋 Help Menu Closed', 'Run `/help` whenever you need me again.', { color: embeds.COLORS.pink })],
+              components: [],
+            }));
+          default:
+            return;
+        }
+
+        await click.update({ embeds: [pageEmbed(interaction, page)], components: [buttons(page)] });
+      } catch (err) {
+        console.error('[/help] button error:', err.message);
+      }
+    });
+
+    // 60s without a click -> grey out the buttons.
+    collector.on('end', async (_collected, reason) => {
+      if (reason === 'closed') return;
+      await interaction.editReply({ components: [buttons(page, true)] }).catch(() => {});
+    });
+  },
+};
