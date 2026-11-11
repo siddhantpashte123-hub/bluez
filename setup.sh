@@ -41,29 +41,139 @@ node_major() {
 
 # ------------------------------------------------------------------
 # 1. Node.js
+#    Method A: NodeSource apt/dnf repository
+#    Method B: official binary from nodejs.org (works on any distro,
+#              in containers, and without root) - automatic fallback
 # ------------------------------------------------------------------
+NODE_DIST_BASE="${NODE_DIST_BASE:-https://nodejs.org/dist}"
+NODE_FALLBACK_VERSION="v22.22.3"   # used when the latest version cannot be looked up
+SETUP_LOG="$(mktemp /tmp/discordbot-setup.XXXXXX 2>/dev/null || echo /tmp/discordbot-setup.log)"
+
+# Can we run commands as root (either we are root, or sudo works)?
+can_root() {
+  [ "$(id -u)" -eq 0 ] && return 0
+  [ -n "$SUDO" ] && $SUDO true 2>/dev/null
+}
+
+# download <url> <output-file>   (curl or wget, whichever exists)
+download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 --connect-timeout 20 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$2" "$1"
+  else
+    return 127
+  fi
+}
+
+node_ok() { hash -r; [ "$(node_major)" -ge "$MIN_NODE_MAJOR" ] 2>/dev/null; }
+
+# ---- Method A: NodeSource repository ----
+install_node_repo() {
+  can_root || return 1
+  local script="/tmp/nodesource-setup-$$.sh"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    $SUDO apt-get update -y -qq >>"$SETUP_LOG" 2>&1
+    $SUDO apt-get install -y -qq curl ca-certificates gnupg >>"$SETUP_LOG" 2>&1
+    # Download to a file first (piping curl straight into bash is what broke before).
+    download "https://deb.nodesource.com/setup_${NODE_SETUP_MAJOR}.x" "$script" >>"$SETUP_LOG" 2>&1 || return 1
+    $SUDO bash "$script" >>"$SETUP_LOG" 2>&1 || { rm -f "$script"; return 1; }
+    rm -f "$script"
+    $SUDO apt-get install -y -qq nodejs >>"$SETUP_LOG" 2>&1 || return 1
+  elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+    local pkg
+    pkg="$(command -v dnf || command -v yum)"
+    download "https://rpm.nodesource.com/setup_${NODE_SETUP_MAJOR}.x" "$script" >>"$SETUP_LOG" 2>&1 || return 1
+    $SUDO bash "$script" >>"$SETUP_LOG" 2>&1 || { rm -f "$script"; return 1; }
+    rm -f "$script"
+    $SUDO "$pkg" install -y nodejs >>"$SETUP_LOG" 2>&1 || return 1
+  else
+    return 1
+  fi
+  node_ok
+}
+
+# ---- Method B: official binary tarball from nodejs.org ----
+install_node_binary() {
+  local arch version tarball url tmp dest
+  case "$(uname -m)" in
+    x86_64|amd64)  arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    armv7l)        arch="armv7l" ;;
+    *) warn "Unsupported CPU architecture: $(uname -m)"; return 1 ;;
+  esac
+
+  # Make sure we have a downloader and tar.
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+    can_root && command -v apt-get >/dev/null 2>&1 && $SUDO apt-get install -y -qq curl ca-certificates >>"$SETUP_LOG" 2>&1
+  fi
+  command -v tar >/dev/null 2>&1 || { warn "'tar' is not installed."; return 1; }
+
+  tmp="$(mktemp -d /tmp/node-install.XXXXXX)" || return 1
+
+  # Look up the newest release of this LTS line; fall back to a pinned version.
+  version=""
+  if download "${NODE_DIST_BASE}/latest-v${NODE_SETUP_MAJOR}.x/SHASUMS256.txt" "$tmp/sums.txt" >>"$SETUP_LOG" 2>&1; then
+    version="$(grep -oE "node-v[0-9]+\.[0-9]+\.[0-9]+-linux-${arch}\.tar\.gz" "$tmp/sums.txt" | head -n 1 | sed -E 's/^node-(v[0-9.]+)-.*/\1/')"
+  fi
+  version="${version:-$NODE_FALLBACK_VERSION}"
+
+  tarball="node-${version}-linux-${arch}.tar.gz"
+  url="${NODE_DIST_BASE}/${version}/${tarball}"
+  echo "   Downloading Node.js ${version} (${arch})..."
+  if ! download "$url" "$tmp/$tarball" >>"$SETUP_LOG" 2>&1; then
+    warn "Download failed: $url"
+    rm -rf "$tmp"; return 1
+  fi
+
+  # Verify the checksum when we have the list and sha256sum.
+  if [ -s "$tmp/sums.txt" ] && command -v sha256sum >/dev/null 2>&1 && grep -q " ${tarball}\$" "$tmp/sums.txt"; then
+    if ! ( cd "$tmp" && grep " ${tarball}\$" sums.txt | sha256sum -c - >>"$SETUP_LOG" 2>&1 ); then
+      warn "Checksum of the Node.js download does not match."
+      rm -rf "$tmp"; return 1
+    fi
+  fi
+
+  if can_root; then
+    # System-wide: /usr/local/bin/node, /usr/local/lib/node_modules/npm ...
+    $SUDO tar -xzf "$tmp/$tarball" -C /usr/local --strip-components=1 --no-same-owner \
+      --exclude='*/CHANGELOG.md' --exclude='*/README.md' --exclude='*/LICENSE' >>"$SETUP_LOG" 2>&1 \
+      || { rm -rf "$tmp"; return 1; }
+    case ":$PATH:" in *":/usr/local/bin:"*) ;; *) export PATH="/usr/local/bin:$PATH" ;; esac
+  else
+    # No root: install into the home directory and add it to the PATH.
+    dest="$HOME/.local/node"
+    rm -rf "$dest" && mkdir -p "$dest" || { rm -rf "$tmp"; return 1; }
+    tar -xzf "$tmp/$tarball" -C "$dest" --strip-components=1 >>"$SETUP_LOG" 2>&1 || { rm -rf "$tmp"; return 1; }
+    export PATH="$dest/bin:$PATH"
+    for rc in "$HOME/.bashrc" "$HOME/.profile"; do
+      grep -qs '.local/node/bin' "$rc" || printf '\n# Node.js (added by Discord bot setup)\nexport PATH="$HOME/.local/node/bin:$PATH"\n' >> "$rc"
+    done
+    warn "No root access: Node.js was installed to $dest (open a new terminal later to use node/pm2 directly)."
+  fi
+  rm -rf "$tmp"
+  node_ok
+}
+
+# A previous run may have installed Node.js into the home directory already.
+[ -x "$HOME/.local/node/bin/node" ] && export PATH="$HOME/.local/node/bin:$PATH"
+
 info "Checking Node.js (v${MIN_NODE_MAJOR}+ required)..."
-if [ "$(node_major)" -ge "$MIN_NODE_MAJOR" ] 2>/dev/null; then
+if node_ok; then
   ok "Node.js $(node -v) found."
 else
   warn "Node.js v${MIN_NODE_MAJOR}+ not found. Installing Node.js ${NODE_SETUP_MAJOR} LTS silently..."
-  if command -v apt-get >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    $SUDO apt-get update -y -qq >/dev/null || die "apt-get update failed."
-    $SUDO apt-get install -y -qq curl ca-certificates gnupg >/dev/null || die "Could not install curl."
-    curl -fsSL "https://deb.nodesource.com/setup_${NODE_SETUP_MAJOR}.x" | $SUDO -E bash - >/dev/null 2>&1 \
-      || die "Could not add the NodeSource repository."
-    $SUDO apt-get install -y -qq nodejs >/dev/null || die "Could not install Node.js."
-  elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
-    PKG="$(command -v dnf || command -v yum)"
-    curl -fsSL "https://rpm.nodesource.com/setup_${NODE_SETUP_MAJOR}.x" | $SUDO bash - >/dev/null 2>&1 \
-      || die "Could not add the NodeSource repository."
-    $SUDO "$PKG" install -y nodejs >/dev/null || die "Could not install Node.js."
+  if install_node_repo; then
+    :
   else
-    die "Unsupported Linux distribution. Please install Node.js ${NODE_SETUP_MAJOR} manually: https://nodejs.org"
+    warn "Package repository method did not work. Trying the official Node.js binary instead..."
+    if ! install_node_binary; then
+      echo "------ last lines of $SETUP_LOG ------" >&2
+      tail -n 15 "$SETUP_LOG" >&2 2>/dev/null
+      die "Could not install Node.js automatically. Install Node.js ${NODE_SETUP_MAJOR} manually (https://nodejs.org) and run ./setup.sh again."
+    fi
   fi
-  hash -r
-  [ "$(node_major)" -ge "$MIN_NODE_MAJOR" ] 2>/dev/null || die "Node.js installation failed."
   ok "Node.js $(node -v) installed."
 fi
 command -v npm >/dev/null 2>&1 || die "npm was not found. Please reinstall Node.js."
@@ -144,7 +254,11 @@ info "Enabling auto-start on reboot (pm2 startup)..."
 RUN_USER="$(id -un)"
 RUN_HOME="${HOME:-$(getent passwd "$RUN_USER" | cut -d: -f6)}"
 NODE_BIN_DIR="$(dirname "$(command -v node)")"
-if $SUDO env "PATH=$PATH:$NODE_BIN_DIR" "$(command -v pm2)" startup systemd -u "$RUN_USER" --hp "$RUN_HOME" >/dev/null 2>&1; then
+if [ ! -d /run/systemd/system ]; then
+  # Containers and some cheap VPS panels have no systemd, so there is nothing to register with.
+  warn "This machine does not use systemd, so auto-start on reboot cannot be registered."
+  warn "After a reboot / container restart, bring the bot back with:  pm2 resurrect"
+elif $SUDO env "PATH=$PATH:$NODE_BIN_DIR" "$(command -v pm2)" startup systemd -u "$RUN_USER" --hp "$RUN_HOME" >/dev/null 2>&1; then
   pm2 save >/dev/null 2>&1
   ok "The bot will start automatically after a reboot."
 else

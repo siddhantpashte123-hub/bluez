@@ -72,7 +72,7 @@ chmod +x setup.sh
 
 Both scripts do the same thing, automatically:
 
-1. Check for **Node.js v20+** and silently install Node.js LTS if it is missing.
+1. Check for **Node.js v20+** and silently install Node.js LTS if it is missing (Linux: package repository first, official nodejs.org binary as automatic fallback).
 2. Run `npm install`.
 3. Ask: `Paste your Discord Bot Token:` and save it to `.env` as `DISCORD_TOKEN=...`.
 4. Install **PM2**, start the bot as `DiscordBot`, run `pm2 save`, and register auto-start on reboot.
