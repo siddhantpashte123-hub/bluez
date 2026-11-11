@@ -77,7 +77,7 @@ module.exports = {
           title: `⌛ Sending... ${sent + failed}/${total}`,
           description: `\`${embeds.bar(sent + failed, total)}\` **${Math.floor(((sent + failed) / total) * 100)}%**`,
           fields: [
-            { name: '✅ Delivered', value: `${sent}`, inline: true },
+            { name: `${embeds.e('tick')} Delivered`, value: `${sent}`, inline: true },
             { name: '🚫 Failed', value: `${failed}`, inline: true },
             { name: '⏱️ Remaining', value: `~${Math.ceil(((total - sent - failed) * DELAY_MS) / 60000)} min`, inline: true },
           ],
@@ -116,7 +116,7 @@ module.exports = {
         embeds.success(interaction, 'Announcement Sent', `Finished messaging the members of **${guild.name}**.`, {
           fields: [
             { name: '👥 Total', value: `${total}`, inline: true },
-            { name: '✅ Delivered', value: `${sent}`, inline: true },
+            { name: `${embeds.e('tick')} Delivered`, value: `${sent}`, inline: true },
             { name: '🚫 Failed (DMs closed)', value: `${failed}`, inline: true },
             { name: '📝 Message', value: text.slice(0, 1024) },
           ],

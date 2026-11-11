@@ -21,6 +21,9 @@ A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash comman
 | | `/247 vc stop` | Leave and turn 24/7 mode off |
 | 🤖 Automation | `/autoresponder set / remove / list` | Auto-reply to keywords (needs **Manage Server**) |
 | | `/auto reacter set / remove / list` | Auto-react to keywords, custom emojis supported (needs **Manage Server**) |
+| 🎫 Tickets | `/ticket setup [channel] [category] [support_role]` | Post the ticket panel with a **Create Ticket** button (needs **Manage Server**) |
+| | `/ticket close` | Close the ticket you are in (owner or support team) |
+| | `/ticket add / remove <user>` | Add or remove a member from the current ticket (support team) |
 | 📊 Info | `/invites` | Invite leaderboard, top 10 with 🥇🥈🥉 |
 | | `/invited <user>` | A member's invite count and invite codes |
 | | `/help` | Multi-page help menu with button navigation |
@@ -52,7 +55,7 @@ Click **Save Changes**. Without these the bot will refuse to start (`Used disall
 2. Scopes: tick **`bot`** and **`applications.commands`**.
 3. Bot permissions: tick **Administrator** (simplest), or at least:
    View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Add Reactions,
-   Use External Emojis, Manage Messages, Manage Channels, Manage Server, Create Invite, Connect, Speak.
+   Use External Emojis, Manage Messages, Manage Channels, Manage Roles, Manage Server, Create Invite, Connect, Speak.
 4. Open the generated URL and add the bot to your server.
 
 ## 4️⃣ One-click setup
@@ -145,7 +148,8 @@ npm start      # same as: node index.js
 │   ├── 247vc.js
 │   ├── channelrename.js
 │   ├── autoresponder.js
-│   └── autoreacter.js
+│   ├── autoreacter.js
+│   └── ticket.js
 ├── events/
 │   ├── ready.js             # registers commands, invite sync, rejoins 24/7 VCs
 │   ├── interactionCreate.js # command router + error embeds
@@ -159,10 +163,31 @@ npm start      # same as: node index.js
     ├── reacter.json
     ├── afk.json
     ├── invites.json
-    └── 247vc.json
+    ├── 247vc.json
+    └── tickets.json
 ```
 
 ---
+
+## 🎫 Ticket system
+
+1. Give the bot's role **Manage Channels** and **Manage Roles** (or Administrator).
+2. Run `/ticket setup`. All options are optional:
+   - `channel`: where the panel is posted (default: the current channel)
+   - `category`: where ticket channels are created
+   - `support_role`: the role that can see and answer every ticket
+3. Members press **Create Ticket**. The bot creates a private channel that only the member, the support role and the bot can see.
+4. Close a ticket with the **Close Ticket** button or `/ticket close`. The channel is deleted 5 seconds after confirming.
+
+Each member can have one open ticket. The panel button keeps working after a bot restart.
+
+## 😀 Custom emojis
+
+The bot uses five custom emojis (tick, caution, two gifts, bow). Their IDs are listed at the top of `utils/embeds.js`.
+
+- Upload them under **Developer Portal → your application → Emojis**, for the **same application** whose token the bot uses. Emojis from a server the bot is in also work.
+- On startup the log shows `Custom emojis loaded: 5/5`. Any emoji that cannot be found is replaced by a normal emoji (✅ ⚠️ 🎁 🎀), so nothing breaks.
+- To add or change one, edit the `EMOJIS` list in `utils/embeds.js` and use it in code with `embeds.e('key')`.
 
 ## 📝 Good to know
 

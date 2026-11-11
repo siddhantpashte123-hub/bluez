@@ -100,7 +100,7 @@ module.exports = {
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.gold,
-          title: `🏆 Invite Leaderboard — ${guild.name}`,
+          title: `${embeds.e('giftLegend')} Invite Leaderboard — ${guild.name}`,
           description: lines.join('\n'),
           fields: [
             { name: '👥 Inviters', value: `${ranking.length}`, inline: true },

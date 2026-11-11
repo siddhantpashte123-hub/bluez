@@ -78,6 +78,18 @@ const CATEGORIES = [
       ['/help', 'Open this help menu.'],
     ],
   },
+  {
+    emoji: '🎫',
+    name: 'Tickets',
+    color: embeds.COLORS.blurple,
+    blurb: 'Private support channels at the click of a button.',
+    commands: [
+      ['/ticket setup [channel] [category] [support_role]', 'Post the ticket panel with the "Create Ticket" button.'],
+      ['/ticket close', 'Close the ticket you are in.'],
+      ['/ticket add <user>', 'Add a member to the current ticket.'],
+      ['/ticket remove <user>', 'Remove a member from the current ticket.'],
+    ],
+  },
 ];
 
 const TOTAL_PAGES = CATEGORIES.length + 1;
@@ -88,9 +100,9 @@ function pageEmbed(interaction, page) {
     const commandCount = CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
     return embeds.make(interaction, {
       color: embeds.COLORS.blurple,
-      title: `✨ ${interaction.client.user.username} — Help Menu`,
+      title: `${embeds.e('bow')} ${interaction.client.user.username} — Help Menu`,
       description:
-        `Hey ${interaction.user}! 👋 Welcome to the command centre.\n` +
+        `Hey ${interaction.user}! ${embeds.e('gift')} Welcome to the command centre.\n` +
         'Use the buttons below to browse the categories.\n\u200b',
       fields: [
         ...CATEGORIES.map((c, i) => ({
@@ -165,7 +177,7 @@ module.exports = {
           case 'help_close':
             collector.stop('closed');
             return void (await click.update({
-              embeds: [embeds.info(interaction, '👋 Help Menu Closed', 'Run `/help` whenever you need me again.', { color: embeds.COLORS.pink })],
+              embeds: [embeds.info(interaction, `${embeds.e('bow')} Help Menu Closed`, 'Run `/help` whenever you need me again.', { color: embeds.COLORS.pink })],
               components: [],
             }));
           default:

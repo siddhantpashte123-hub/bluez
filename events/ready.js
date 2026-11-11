@@ -7,6 +7,7 @@
  *   4. Rejoins every saved 24/7 voice channel + starts the watchdog
  */
 const { Events, Routes, ActivityType } = require('discord.js');
+const embeds = require('../utils/embeds');
 const { syncInvites } = require('../commands/invites');
 const voice247 = require('../commands/247vc');
 
@@ -30,6 +31,9 @@ module.exports = {
     } catch (err) {
       console.error('❌ Failed to register slash commands:', err.message);
     }
+
+    /* ---- 1b. Custom emojis (tick, caution, gifts, bow) ---- */
+    await embeds.loadEmojis(client).catch((err) => console.error('[Emojis]', err.message));
 
     /* ---- 2. Presence ---- */
     try {

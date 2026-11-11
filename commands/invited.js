@@ -42,7 +42,7 @@ module.exports = {
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.cyan,
-          title: `📨 Invites of ${user.username}`,
+          title: `${embeds.e('gift')} Invites of ${user.username}`,
           description: `${user} has invited **${total}** member${total === 1 ? '' : 's'} to **${interaction.guild.name}**.`,
           fields: [
             { name: '👥 Total Invites', value: `${total}`, inline: true },
