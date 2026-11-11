@@ -75,6 +75,7 @@ const CATEGORIES = [
     commands: [
       ['/invites', 'Invite leaderboard – top 10 inviters with medals.'],
       ['/invited <user>', "A member's invite count and invite codes."],
+      ['/userinfo [user]', "A member's profile: ID, join date, roles and more."],
       ['/help', 'Open this help menu.'],
     ],
   },

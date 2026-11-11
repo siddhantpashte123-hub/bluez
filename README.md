@@ -26,6 +26,7 @@ A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash comman
 | | `/ticket add / remove <user>` | Add or remove a member from the current ticket (support team) |
 | 📊 Info | `/invites` | Invite leaderboard, top 10 with 🥇🥈🥉 |
 | | `/invited <user>` | A member's invite count and invite codes |
+| | `/userinfo [user]` | A member's profile: ID, join date, roles |
 | | `/help` | Multi-page help menu with button navigation |
 
 ---
@@ -149,7 +150,8 @@ npm start      # same as: node index.js
 │   ├── channelrename.js
 │   ├── autoresponder.js
 │   ├── autoreacter.js
-│   └── ticket.js
+│   ├── ticket.js
+│   └── userinfo.js
 ├── events/
 │   ├── ready.js             # registers commands, invite sync, rejoins 24/7 VCs
 │   ├── interactionCreate.js # command router + error embeds

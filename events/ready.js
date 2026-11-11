@@ -16,6 +16,19 @@ const WATCHDOG_INTERVAL_MS = 60_000;
 /** Sync invites without ever throwing (missing permission is normal). */
 const safeSync = (guild) => syncInvites(guild).catch(() => {});
 
+/** Delete commands that were registered for one server only (leftovers of older bot code). */
+async function clearGuildCommands(client, guild) {
+  try {
+    const route = Routes.applicationGuildCommands(client.user.id, guild.id);
+    const existing = await client.rest.get(route);
+    if (!Array.isArray(existing) || !existing.length) return;
+    await client.rest.put(route, { body: [] });
+    console.log(`[Commands] Removed ${existing.length} old server-only command(s) in "${guild.name}": ${existing.map((c) => `/${c.name}`).join(', ')}`);
+  } catch (err) {
+    console.error(`[Commands] Could not clean old commands in "${guild.name}":`, err.message);
+  }
+}
+
 module.exports = {
   name: Events.ClientReady,
   once: true,
@@ -31,6 +44,13 @@ module.exports = {
     } catch (err) {
       console.error('❌ Failed to register slash commands:', err.message);
     }
+
+    /* ---- 1a. Remove leftover per-server commands ----
+     * Older bot code may have registered commands for single servers. This bot only
+     * uses GLOBAL commands, so anything left there would answer "Unknown Command".
+     */
+    client.on(Events.GuildCreate, (guild) => clearGuildCommands(client, guild));
+    for (const guild of client.guilds.cache.values()) await clearGuildCommands(client, guild);
 
     /* ---- 1b. Custom emojis (tick, caution, gifts, bow) ---- */
     await embeds.loadEmojis(client).catch((err) => console.error('[Emojis]', err.message));
