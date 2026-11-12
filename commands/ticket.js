@@ -32,6 +32,11 @@ const {
   ButtonStyle,
   MessageFlags,
   AttachmentBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  FileBuilder,
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
@@ -257,47 +262,73 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
 /**
  * HTML transcript of the whole ticket (opens in any browser, looks like Discord).
  * Sent to the ticket owner by DM and to the log channel (/logs set).
+ *
+ * The message is a "Components V2" card: text, separators and the file inside
+ * one container. A file placed there is shown as a compact download box
+ * (a normal attachment would get Discord's big source-code preview).
  */
 async function saveTranscript(interaction, ticket) {
   const { guild, channel } = interaction;
   const { html, count } = await buildTranscript(channel, { closedBy: interaction.user, openedById: ticket.userId });
-  const fileName = `${channel.name}-transcript.html`;
-  const file = () => new AttachmentBuilder(Buffer.from(html, 'utf8'), { name: fileName });
+  const fileName = `${channel.name.replace(/[^\w.-]+/g, '-')}-transcript.html`; // attachment:// needs a plain name
   const closedAt = Math.floor(Date.now() / 1000);
+  const botName = interaction.client.user.username;
 
-  const overview = (extra = []) =>
-    [
+  const card = (intro, extra = []) => {
+    const overview = [
       `**Server:** ${guild.name}`,
       `**Ticket:** \`${channel.name}\``,
       ...extra,
       `**Closed By:** ${interaction.user}`,
       `**Closed At:** <t:${closedAt}:F> (<t:${closedAt}:R>)`,
     ]
-      .map((line) => `> • ${line}`)
+      .map((line) => `> - ${line}`)
       .join('\n');
-  const build = (intro, extra) =>
-    embeds.make(interaction, {
-      color: embeds.COLORS.blurple,
-      title: 'Ticket Transcript.',
-      description: `${intro}\n\n**Session Overview**\n${overview(extra)}\n\n📁 **Attached Transcript:** \`${fileName}\`\n*Download the file and open it in your browser.*`,
-      thumbnail: guild.iconURL({ size: 256 }) ?? undefined,
-      footer: "Ticket Transcript",
-    });
+    const line = () => new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small);
+
+    const container = new ContainerBuilder()
+      .setAccentColor(embeds.COLORS.blurple)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('## Ticket Transcript.'))
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(intro))
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### Session Overview\n${overview}`))
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('📁 **Attached Transcript:**'))
+      .addFileComponents(new FileBuilder().setURL(`attachment://${fileName}`))
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${botName} - Ticket Transcript`));
+
+    return {
+      components: [container],
+      files: [new AttachmentBuilder(Buffer.from(html, 'utf8'), { name: fileName })],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    };
+  };
+
+  // Plain embed + attachment, used only if Discord refuses the card above.
+  const fallback = (intro) => ({
+    embeds: [embeds.make(interaction, { color: embeds.COLORS.blurple, title: 'Ticket Transcript.', description: `${intro}\n\n**Ticket:** \`${channel.name}\`\n**Closed By:** ${interaction.user}`, footer: 'Ticket Transcript' })],
+    files: [new AttachmentBuilder(Buffer.from(html, 'utf8'), { name: fileName })],
+    allowedMentions: { parse: [] },
+  });
 
   // 1. DM to the member who opened the ticket.
+  const dmText = `Your support session in **${guild.name}** has been closed.\nA secure HTML transcript of your conversation is attached below for your records.`;
   const owner = await interaction.client.users.fetch(ticket.userId).catch(() => null);
-  await owner
-    ?.send({
-      embeds: [build(`Your support session in **${guild.name}** has been closed.\nA secure HTML transcript of your conversation is attached for your records.`)],
-      files: [file()],
-    })
-    .catch(() => {}); // DMs closed
+  if (owner) {
+    await owner.send(card(dmText)).catch(async (err) => {
+      if (err.code === 50007) return; // DMs closed
+      console.error('[Ticket] transcript card failed, sending the simple version:', err.message);
+      await owner.send(fallback(dmText)).catch(() => {});
+    });
+  }
 
   // 2. Copy for the staff in the log channel.
-  await logs.sendLog(guild, {
-    embeds: [build(`The ticket \`${channel.name}\` has been closed.\nThe HTML transcript of the conversation is attached.`, [`**Opened By:** <@${ticket.userId}>`, `**Messages:** ${count}`])],
-    files: [file()],
-  });
+  const logText = `The ticket \`${channel.name}\` has been closed.\nThe HTML transcript of the conversation is attached below.`;
+  const logged = await logs.sendLog(guild, card(logText, [`**Opened By:** <@${ticket.userId}>`, `**Messages:** ${count}`]));
+  if (!logged) await logs.sendLog(guild, fallback(logText)); // does nothing when no log channel is set
 }
 
 /* ------------------------------------------------------------------ */
