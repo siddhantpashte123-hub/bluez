@@ -235,7 +235,7 @@ Everything below is switched **off** until you set it up. Quick setup commands:
 **Shop flow:** a member presses a product button → a private `order-…` ticket opens → the bot posts the UPI QR for the price → the member pays and sends a screenshot → staff presses **Mark as Paid** (stock goes down by one, the order is written to the log channel).
 A bot **cannot verify UPI payments**. Staff must check their own UPI app before pressing the button.
 
-**Tickets:** the panel has **Support / Buy / Report** buttons, staff can **Claim** a ticket, and a transcript (last 100 messages) is saved to the log channel on close (or sent to the ticket owner by DM when no log channel is set). Run `/ticket setup` again to get the new panel.
+**Tickets:** the panel has **Support / Buy / Report** buttons, staff can **Claim** a ticket, and an **HTML transcript** (Discord-styled, opens in any browser, up to 2,000 messages) is sent to the ticket owner by DM and to the log channel when the ticket is closed. Run `/ticket setup` again to get the new panel.
 
 **Giveaways:** `/gcreate` accepts `required_role`, `min_invites` and `bonus_role` (2x chance).
 

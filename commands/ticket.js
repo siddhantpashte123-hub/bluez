@@ -36,6 +36,7 @@ const {
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
 const logs = require('./logs');
+const { buildTranscript } = require('../utils/transcript');
 
 const CLOSE_DELAY_MS = 5000;
 const MAX_CHANNELS_PER_CATEGORY = 50; // Discord limit
@@ -253,34 +254,50 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
 /*  Transcript                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Text file with the last 100 messages of the ticket. */
+/**
+ * HTML transcript of the whole ticket (opens in any browser, looks like Discord).
+ * Sent to the ticket owner by DM and to the log channel (/logs set).
+ */
 async function saveTranscript(interaction, ticket) {
   const { guild, channel } = interaction;
-  const messages = [...(await channel.messages.fetch({ limit: 100 })).values()].reverse();
-  const lines = messages.map((m) => {
-    const time = new Date(m.createdTimestamp).toISOString().replace('T', ' ').slice(0, 19);
-    const extras = [...m.attachments.values()].map((a) => a.url).concat(m.embeds.length ? [`[${m.embeds.length} embed(s)]`] : []);
-    return `[${time}] ${m.author.tag}: ${m.content}${extras.length ? ` ${extras.join(' ')}` : ''}`;
-  });
-  const file = new AttachmentBuilder(Buffer.from(`Transcript of #${channel.name} (${guild.name})\n\n${lines.join('\n')}\n`, 'utf8'), {
-    name: `transcript-${channel.name}.txt`,
-  });
-  const embed = embeds.make(interaction, {
-    color: embeds.COLORS.blurple,
-    title: '🧾 Ticket Transcript',
-    fields: [
-      { name: '📁 Ticket', value: `\`#${channel.name}\``, inline: true },
-      { name: '👤 Opened by', value: `<@${ticket.userId}>`, inline: true },
-      { name: '🔒 Closed by', value: `${interaction.user}`, inline: true },
-      { name: '💬 Messages', value: `${messages.length}`, inline: true },
-    ],
-  });
+  const { html, count } = await buildTranscript(channel, { closedBy: interaction.user, openedById: ticket.userId });
+  const fileName = `${channel.name}-transcript.html`;
+  const file = () => new AttachmentBuilder(Buffer.from(html, 'utf8'), { name: fileName });
+  const closedAt = Math.floor(Date.now() / 1000);
 
-  const sent = await logs.sendLog(guild, { embeds: [embed], files: [file] });
-  if (!sent) {
-    const owner = await interaction.client.users.fetch(ticket.userId).catch(() => null);
-    await owner?.send({ embeds: [embed], files: [file] }).catch(() => {});
-  }
+  const overview = (extra = []) =>
+    [
+      `**Server:** ${guild.name}`,
+      `**Ticket:** \`${channel.name}\``,
+      ...extra,
+      `**Closed By:** ${interaction.user}`,
+      `**Closed At:** <t:${closedAt}:F> (<t:${closedAt}:R>)`,
+    ]
+      .map((line) => `> • ${line}`)
+      .join('\n');
+  const build = (intro, extra) =>
+    embeds.make(interaction, {
+      color: embeds.COLORS.blurple,
+      title: 'Ticket Transcript.',
+      description: `${intro}\n\n**Session Overview**\n${overview(extra)}\n\n📁 **Attached Transcript:** \`${fileName}\`\n*Download the file and open it in your browser.*`,
+      thumbnail: guild.iconURL({ size: 256 }) ?? undefined,
+      footer: "Ticket Transcript",
+    });
+
+  // 1. DM to the member who opened the ticket.
+  const owner = await interaction.client.users.fetch(ticket.userId).catch(() => null);
+  await owner
+    ?.send({
+      embeds: [build(`Your support session in **${guild.name}** has been closed.\nA secure HTML transcript of your conversation is attached for your records.`)],
+      files: [file()],
+    })
+    .catch(() => {}); // DMs closed
+
+  // 2. Copy for the staff in the log channel.
+  await logs.sendLog(guild, {
+    embeds: [build(`The ticket \`${channel.name}\` has been closed.\nThe HTML transcript of the conversation is attached.`, [`**Opened By:** <@${ticket.userId}>`, `**Messages:** ${count}`])],
+    files: [file()],
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -312,7 +329,7 @@ async function confirmClose(interaction) {
     delete data[guild.id]?.tickets?.[channel.id];
   });
 
-  // Save a transcript before the channel disappears (log channel, or DM to the owner).
+  // Save a transcript before the channel disappears (DM to the owner + log channel).
   await saveTranscript(interaction, ticket).catch((err) => console.error('[Ticket] transcript failed:', err.message));
 
   setTimeout(() => {
