@@ -29,6 +29,7 @@ const {
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
 const tickets = require('./ticket');
+const { storedInvites, totalOf } = require('./invites');
 
 const MIN_DURATION_MS = 10_000; // 10 seconds
 const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -56,13 +57,25 @@ function parseDuration(input) {
 }
 
 /** Pick `count` different random entries. */
-function pickWinners(entrants, count) {
-  const pool = [...entrants];
+function pickWinners(entrants, count, bonus = []) {
+  // Members with the bonus role are in the draw twice (double chance).
+  let pool = [...entrants, ...bonus.filter((id) => entrants.includes(id))];
   const winners = [];
   while (pool.length && winners.length < count) {
-    winners.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    const winner = pool[Math.floor(Math.random() * pool.length)];
+    winners.push(winner);
+    pool = pool.filter((id) => id !== winner);
   }
   return winners;
+}
+
+/** Text of the entry requirements ('' when there are none). */
+function requirementText(g) {
+  const lines = [];
+  if (g.requiredRoleId) lines.push(`• Role: <@&${g.requiredRoleId}>`);
+  if (g.minInvites) lines.push(`• At least **${g.minInvites}** invite${g.minInvites === 1 ? '' : 's'}`);
+  if (g.bonusRoleId) lines.push(`• <@&${g.bonusRoleId}> gets **2x** chance`);
+  return lines.join('\n');
 }
 
 const mentions = (ids) => ids.map((id) => `<@${id}>`).join(', ');
@@ -81,6 +94,7 @@ function giveawayEmbed(ctx, g) {
         { name: '🏆 Winners', value: `${g.winners}`, inline: true },
         { name: '👥 Entries', value: `${g.entrants.length}`, inline: true },
         { name: '🎙️ Hosted by', value: `<@${g.hostId}>`, inline: true },
+        ...(requirementText(g) ? [{ name: '📋 Requirements', value: requirementText(g) }] : []),
       ],
     });
   }
@@ -159,7 +173,7 @@ async function endGiveaway(client, messageId) {
     clearTimeout(refreshTimers.get(messageId));
     refreshTimers.delete(messageId);
 
-    const winnerIds = pickWinners(g.entrants, g.winners);
+    const winnerIds = pickWinners(g.entrants, g.winners, g.bonus);
     db.update('giveaways', (data) => {
       Object.assign(data[messageId], { ended: true, winnerIds, endsAt: Math.min(g.endsAt, Date.now()) });
     });
@@ -198,7 +212,7 @@ async function rerollGiveaway(client, messageId, count) {
 
   // Prefer people who have not won yet; fall back to everyone if too few are left.
   const fresh = g.entrants.filter((id) => !g.winnerIds.includes(id));
-  const winnerIds = pickWinners(fresh.length >= count ? fresh : g.entrants, count);
+  const winnerIds = pickWinners(fresh.length >= count ? fresh : g.entrants, count, g.bonus);
   if (!winnerIds.length) return [];
 
   db.update('giveaways', (data) => {
@@ -280,10 +294,27 @@ async function handleButton(interaction) {
 
   const userId = interaction.user.id;
   const joined = !g.entrants.includes(userId);
+  const roles = interaction.member?.roles?.cache;
+
+  // Entry requirements (only checked when joining).
+  if (joined && g.requiredRoleId && !roles?.has(g.requiredRoleId)) {
+    return interaction.reply(ephemeral(embeds.error(interaction, 'Requirement Not Met', `You need the <@&${g.requiredRoleId}> role to enter this giveaway.`)));
+  }
+  if (joined && g.minInvites) {
+    const have = totalOf(storedInvites(interaction.guildId)[userId]);
+    if (have < g.minInvites) {
+      return interaction.reply(ephemeral(embeds.error(interaction, 'Requirement Not Met', `You need **${g.minInvites}** invites to enter. You have **${have}**.`)));
+    }
+  }
+  const hasBonus = Boolean(joined && g.bonusRoleId && roles?.has(g.bonusRoleId));
+
   db.update('giveaways', (data) => {
-    const list = data[messageId].entrants;
+    const entry = data[messageId];
+    const list = entry.entrants;
+    entry.bonus = (entry.bonus ?? []).filter((id) => id !== userId);
     if (joined) list.push(userId);
     else list.splice(list.indexOf(userId), 1);
+    if (hasBonus) entry.bonus.push(userId);
   });
 
   // Refresh the "Entries" number at most once every few seconds (rate-limit friendly).
@@ -301,7 +332,7 @@ async function handleButton(interaction) {
   return interaction.reply(
     ephemeral(
       joined
-        ? embeds.success(interaction, 'You Are In!', `You entered the giveaway for **${g.prize}**. Good luck! ${embeds.e('bow')}\nPress the button again to leave.`)
+        ? embeds.success(interaction, 'You Are In!', `You entered the giveaway for **${g.prize}**. Good luck! ${embeds.e('bow')}${hasBonus ? '\nYou have a **2x** chance thanks to your role!' : ''}\nPress the button again to leave.`)
         : embeds.warn(interaction, 'Entry Removed', `You left the giveaway for **${g.prize}**.`),
     ),
   );
@@ -329,7 +360,10 @@ module.exports = {
     .addIntegerOption((o) => o.setName('winners').setDescription('Number of winners (default 1)').setMinValue(1).setMaxValue(20))
     .addChannelOption((o) =>
       o.setName('channel').setDescription('Where to post it (default: this channel)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
-    ),
+    )
+    .addRoleOption((o) => o.setName('required_role').setDescription('Only members with this role can enter'))
+    .addIntegerOption((o) => o.setName('min_invites').setDescription('Invites needed to enter').setMinValue(1).setMaxValue(10000))
+    .addRoleOption((o) => o.setName('bonus_role').setDescription('Members with this role get a 2x chance')),
 
   async execute(interaction) {
     const prize = interaction.options.getString('prize', true).trim();
@@ -363,6 +397,10 @@ module.exports = {
       entrants: [],
       ended: false,
       winnerIds: [],
+      requiredRoleId: interaction.options.getRole('required_role')?.id ?? null,
+      minInvites: interaction.options.getInteger('min_invites') ?? 0,
+      bonusRoleId: interaction.options.getRole('bonus_role')?.id ?? null,
+      bonus: [],
     };
 
     const message = await channel.send({ embeds: [giveawayEmbed(interaction, giveaway)], components: [enterRow(giveaway)] });

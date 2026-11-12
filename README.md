@@ -206,10 +206,46 @@ npm start      # same as: node index.js
    - `channel`: where the panel is posted (default: the current channel)
    - `category`: where ticket channels are created
    - `support_role`: the role that can see and answer every ticket
-3. Members press **Create Ticket**. The bot creates a private channel that only the member, the support role and the bot can see.
+3. Members press **Support**, **Buy** or **Report**. The bot creates a private channel that only the member, the support role and the bot can see.
 4. Close a ticket with the **Close Ticket** button or `/ticket close`. The channel is deleted 5 seconds after confirming.
 
 Each member can have one open ticket. The panel button keeps working after a bot restart.
+
+## 🧩 More features (moderation, welcome, levels, shop…)
+
+Everything below is switched **off** until you set it up. Quick setup commands:
+
+| Feature | Setup |
+| --- | --- |
+| Mod logs (deleted/edited messages, joins, leaves, mod actions, ticket transcripts, paid orders) | `/logs set channel:#logs` |
+| Moderation | `/mod ban`, `kick`, `timeout`, `untimeout`, `warn`, `warnings`, `clearwarns`, `lock`, `unlock`, `slowmode` |
+| Automod (invite links, mass mentions, spam, bad words) | `/automod set rule:… enabled:True`, `/automod word action:add word:…` |
+| Raid protection | `/antiraid set enabled:True min_account_age_days:3 join_limit:8` |
+| Welcome / goodbye / auto-role | `/welcome set`, `/welcome goodbye`, `/welcome autorole` (placeholders: `{user}`, `{server}`, `{count}`) |
+| Self-roles and verification | `/roles panel`, `/roles verify role:@Member` |
+| Invite reward roles | `/inviterewards set invites:5 role:@Inviter` |
+| Levels / XP | `/level toggle enabled:True`, `/level reward level:5 role:@Active`, `/level rank`, `/level leaderboard` |
+| Economy (game coins) | `/eco daily`, `work`, `balance`, `pay`, `leaderboard` |
+| Polls and suggestions | `/poll question:… options:A \| B \| C`, `/suggest setup channel:#suggestions`, `/suggest idea` |
+| Reminders and birthdays | `/remind in:2h text:…`, `/birthday channel`, `/birthday set` |
+| Fun and info | `/fun 8ball\|coinflip\|dice\|choose`, `/info server\|avatar\|ping\|bot`, `/embed` |
+| Shop with UPI order tickets | `/shop setup upi_id:name@bank name:…` → `/shop add` → `/shop panel` |
+| Vouches (reviews) | `/vouch channel`, `/vouch give stars:5 review:…`, `/vouch stats` |
+
+**Shop flow:** a member presses a product button → a private `order-…` ticket opens → the bot posts the UPI QR for the price → the member pays and sends a screenshot → staff presses **Mark as Paid** (stock goes down by one, the order is written to the log channel).
+A bot **cannot verify UPI payments**. Staff must check their own UPI app before pressing the button.
+
+**Tickets:** the panel has **Support / Buy / Report** buttons, staff can **Claim** a ticket, and a transcript (last 100 messages) is saved to the log channel on close (or sent to the ticket owner by DM when no log channel is set). Run `/ticket setup` again to get the new panel.
+
+**Giveaways:** `/gcreate` accepts `required_role`, `min_invites` and `bonus_role` (2x chance).
+
+**Music:** `/music volume percent:…` (applies from the next song).
+
+**Permissions the bot role needs for these features:** Kick Members, Ban Members, Timeout Members, Manage Messages, Manage Roles, Manage Channels, Manage Server (invite tracking). The bot's role must be **above** every role it should give out.
+
+Settings and data of these features are stored in `data/*.json` (created automatically, not part of the Git repository — back up the `data/` folder).
+
+---
 
 ## 😀 Custom emojis
 

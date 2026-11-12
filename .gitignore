@@ -6,3 +6,5 @@ data/*.corrupt-*
 data/silence.wav
 bin/
 cookies.txt
+# new stores are created at runtime
+data/*.json

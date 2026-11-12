@@ -8,6 +8,8 @@
 const { Events, PermissionFlagsBits } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const automod = require('../commands/automod');
+const levels = require('../commands/level');
 const { reactionOf } = require('../commands/autoreacter');
 
 const RESPONDER_COOLDOWN_MS = 2500; // per channel, stops reply spam
@@ -118,6 +120,10 @@ module.exports = {
     const canReact = perms?.has([PermissionFlagsBits.AddReactions, PermissionFlagsBits.ReadMessageHistory]) ?? false;
 
     const content = (message.content ?? '').toLowerCase();
+
+    // Automod first: a removed message gets no XP, reactions or auto-responses.
+    if (await automod.check(message).catch((err) => (console.error('[Automod]', err.message), false))) return;
+    await levels.addXp(message).catch((err) => console.error('[Levels]', err.message));
 
     // Each feature is isolated: one failing never blocks the others.
     if (canSend) await handleAfk(message).catch((err) => console.error('[AFK]', err.message));

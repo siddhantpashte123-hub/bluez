@@ -31,9 +31,11 @@ const {
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
+  AttachmentBuilder,
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const logs = require('./logs');
 
 const CLOSE_DELAY_MS = 5000;
 const MAX_CHANNELS_PER_CATEGORY = 50; // Discord limit
@@ -79,6 +81,7 @@ function isStaff(member, config, ticket = null) {
 /** Buttons shown inside a ticket channel. */
 function closeRow() {
   return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ticket_claim').setLabel('Claim').setEmoji('🙋').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('ticket_close').setLabel('Close Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger),
   );
 }
@@ -116,9 +119,17 @@ async function askToClose(interaction) {
  * `prize` is set when a giveaway winner claims a prize (see commands/gcreate.js):
  *   { prize: 'Nitro', hostId: '123' }  -> works without /ticket setup, the host is added
  *   to the ticket, and it does not count towards the "one ticket per member" rule.
+ * Optional extras (used by /shop buy): prefix, topic, title, description, ownerLabel.
  * Returns the new channel, or null when no ticket was created (the user was told why).
  */
-async function openTicket(interaction, prize = null) {
+/** Ticket types offered on the panel: button ID -> { label, emoji, prefix }. */
+const KINDS = {
+  ticket_open: { label: 'Support', emoji: '🛟', prefix: 'ticket', style: ButtonStyle.Primary },
+  ticket_open_buy: { label: 'Buy', emoji: '🛒', prefix: 'buy', style: ButtonStyle.Success },
+  ticket_open_report: { label: 'Report', emoji: '🚨', prefix: 'report', style: ButtonStyle.Danger },
+};
+
+async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
   const { guild, user } = interaction;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -177,10 +188,10 @@ async function openTicket(interaction, prize = null) {
   let channel;
   try {
     channel = await guild.channels.create({
-      name: `${prize ? 'prize' : 'ticket'}-${slug(user.username)}-${String(number).padStart(4, '0')}`,
+      name: `${prize ? prize.prefix ?? 'prize' : kind.prefix}-${slug(user.username)}-${String(number).padStart(4, '0')}`,
       type: ChannelType.GuildText,
       parent,
-      topic: `${prize ? `Prize claim: ${prize.prize.slice(0, 100)}` : `Ticket #${number}`} • opened by ${user.tag} (${user.id})`,
+      topic: `${prize ? prize.topic ?? `Prize claim: ${prize.prize.slice(0, 100)}` : `${kind.label} ticket #${number}`} • opened by ${user.tag} (${user.id})`,
       permissionOverwrites: overwrites,
       reason: `Ticket opened by ${user.tag}`,
     });
@@ -213,14 +224,14 @@ async function openTicket(interaction, prize = null) {
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.blurple,
-          title: prize ? `${embeds.e('giftLegend')} Prize Claim` : `${embeds.e('gift')} Ticket #${number}`,
+          title: prize ? prize.title ?? `${embeds.e('giftLegend')} Prize Claim` : `${embeds.e('gift')} ${kind.label} Ticket #${number}`,
           description: prize
-            ? `Congratulations ${user}! ${embeds.e('bow')}\nYou won **${prize.prize}**. The host will hand over your prize here.`
+            ? prize.description ?? `Congratulations ${user}! ${embeds.e('bow')}\nYou won **${prize.prize}**. The host will hand over your prize here.`
             : `Welcome ${user}! ${embeds.e('bow')}\n` + 'Please describe what you need and the support team will be with you shortly.',
           fields: [
-            { name: prize ? '🏆 Winner' : '👤 Opened by', value: `${user}`, inline: true },
+            { name: prize ? prize.ownerLabel ?? '🏆 Winner' : '👤 Opened by', value: `${user}`, inline: true },
             prize
-              ? { name: '🎙️ Giveaway Host', value: host ? `${host}` : 'Server staff', inline: true }
+              ? { name: prize.hostLabel ?? '🎙️ Giveaway Host', value: host ? `${host}` : 'Server staff', inline: true }
               : { name: '🛟 Support', value: supportRole ? `${supportRole}` : 'Server staff', inline: true },
             { name: '🔒 Closing', value: 'Press the button below or use `/ticket close`.' },
           ],
@@ -236,6 +247,40 @@ async function openTicket(interaction, prize = null) {
     embeds: [embeds.success(interaction, 'Ticket Created', `Your ticket is ready: ${channel}`)],
   });
   return channel;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Transcript                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Text file with the last 100 messages of the ticket. */
+async function saveTranscript(interaction, ticket) {
+  const { guild, channel } = interaction;
+  const messages = [...(await channel.messages.fetch({ limit: 100 })).values()].reverse();
+  const lines = messages.map((m) => {
+    const time = new Date(m.createdTimestamp).toISOString().replace('T', ' ').slice(0, 19);
+    const extras = [...m.attachments.values()].map((a) => a.url).concat(m.embeds.length ? [`[${m.embeds.length} embed(s)]`] : []);
+    return `[${time}] ${m.author.tag}: ${m.content}${extras.length ? ` ${extras.join(' ')}` : ''}`;
+  });
+  const file = new AttachmentBuilder(Buffer.from(`Transcript of #${channel.name} (${guild.name})\n\n${lines.join('\n')}\n`, 'utf8'), {
+    name: `transcript-${channel.name}.txt`,
+  });
+  const embed = embeds.make(interaction, {
+    color: embeds.COLORS.blurple,
+    title: '🧾 Ticket Transcript',
+    fields: [
+      { name: '📁 Ticket', value: `\`#${channel.name}\``, inline: true },
+      { name: '👤 Opened by', value: `<@${ticket.userId}>`, inline: true },
+      { name: '🔒 Closed by', value: `${interaction.user}`, inline: true },
+      { name: '💬 Messages', value: `${messages.length}`, inline: true },
+    ],
+  });
+
+  const sent = await logs.sendLog(guild, { embeds: [embed], files: [file] });
+  if (!sent) {
+    const owner = await interaction.client.users.fetch(ticket.userId).catch(() => null);
+    await owner?.send({ embeds: [embed], files: [file] }).catch(() => {});
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,16 +312,41 @@ async function confirmClose(interaction) {
     delete data[guild.id]?.tickets?.[channel.id];
   });
 
+  // Save a transcript before the channel disappears (log channel, or DM to the owner).
+  await saveTranscript(interaction, ticket).catch((err) => console.error('[Ticket] transcript failed:', err.message));
+
   setTimeout(() => {
     channel.delete(`Ticket closed by ${interaction.user.tag}`).catch((err) => console.error('[Ticket] delete failed:', err.message));
   }, CLOSE_DELAY_MS);
+}
+
+/** Staff button: "I am handling this ticket". */
+async function claimTicket(interaction) {
+  const { guild, channel } = interaction;
+  const config = configOf(guild.id);
+  const ticket = ticketOf(guild.id, channel.id);
+  if (!ticket) return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'This channel is not an open ticket.')));
+  if (!isStaff(interaction.member, config, ticket) || interaction.user.id === ticket.userId) {
+    return interaction.reply(ephemeral(embeds.error(interaction, 'Staff Only', 'Only the support team can claim a ticket.')));
+  }
+  if (ticket.claimedBy) {
+    return interaction.reply(ephemeral(embeds.warn(interaction, 'Already Claimed', `This ticket is handled by <@${ticket.claimedBy}>.`)));
+  }
+  db.update('tickets', (data) => {
+    data[guild.id].tickets[channel.id].claimedBy = interaction.user.id;
+  });
+  return interaction.reply({ embeds: [embeds.success(interaction, 'Ticket Claimed', `${interaction.user} will help you from here. ${embeds.e('bow')}`)] });
 }
 
 /** Router for every "ticket_*" button (called from events/interactionCreate.js). */
 async function handleButton(interaction) {
   switch (interaction.customId) {
     case 'ticket_open':
-      return openTicket(interaction);
+    case 'ticket_open_buy':
+    case 'ticket_open_report':
+      return openTicket(interaction, null, KINDS[interaction.customId]);
+    case 'ticket_claim':
+      return claimTicket(interaction);
     case 'ticket_close':
       return askToClose(interaction);
     case 'ticket_close_confirm':
@@ -298,6 +368,8 @@ async function handleButton(interaction) {
 module.exports = {
   handleButton,
   openTicket,
+  isStaff,
+  configOf,
 
   data: new SlashCommandBuilder()
     .setName('ticket')
@@ -385,7 +457,7 @@ module.exports = {
         ],
         components: [
           new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('ticket_open').setLabel('Create Ticket').setEmoji('🎫').setStyle(ButtonStyle.Primary),
+            Object.entries(KINDS).map(([id, k]) => new ButtonBuilder().setCustomId(id).setLabel(k.label).setEmoji(k.emoji).setStyle(k.style)),
           ),
         ],
       });

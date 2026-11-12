@@ -12,7 +12,14 @@ const giveaway = require('../commands/gcreate');
 const music = require('../commands/music');
 
 /** customId prefix ("ticket_open" -> "ticket") -> module with handleButton(). */
-const BUTTON_HANDLERS = { ticket, giveaway, music };
+const BUTTON_HANDLERS = {
+  ticket,
+  giveaway,
+  music,
+  roles: require('../commands/roles'),
+  poll: require('../commands/poll'),
+  shop: require('../commands/shop'),
+};
 
 /** Friendly text for the most common Discord API errors. */
 function describe(err) {

@@ -142,4 +142,17 @@ function bar(done, total, size = 14) {
 /** Small helper used for delays and the "loading -> final" animation feel. */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-module.exports = { COLORS, EMOJIS, e, loadEmojis, make, success, error, warn, info, loading, bar, sleep };
+const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
+/** "1d 12h", "30m", "45s" -> milliseconds (null when invalid). */
+function parseDuration(input) {
+  const text = String(input).toLowerCase().replace(/\s+/g, '');
+  if (!/^(\d+[smhdw])+$/.test(text)) return null;
+  let total = 0;
+  for (const [, amount, unit] of text.matchAll(/(\d+)([smhdw])/g)) total += Number(amount) * UNIT_MS[unit];
+  return total;
+}
+
+/** Wrap an embed as an "only you can see this" reply. */
+const ephemeral = (embed) => ({ embeds: [embed], flags: 64 });
+
+module.exports = { COLORS, EMOJIS, e, loadEmojis, parseDuration, ephemeral, make, success, error, warn, info, loading, bar, sleep };

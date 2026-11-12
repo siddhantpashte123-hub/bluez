@@ -181,7 +181,7 @@ async function resolveTrack(query, requestedBy, attempts = null) {
 }
 
 /** Start yt-dlp | ffmpeg for a track and wrap the output as an audio resource. */
-function createStream(track, ytdlpFile) {
+function createStream(track, ytdlpFile, volume = 100) {
   const downloader = spawn(
     ytdlpFile,
     [...ytdlpExtraArgs, '-f', 'bestaudio[ext=webm]/bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings', track.url],
@@ -189,7 +189,7 @@ function createStream(track, ytdlpFile) {
   );
   const encoder = spawn(
     ffmpegPath(),
-    ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-f', 'opus', 'pipe:1'],
+    ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-filter:a', `volume=${(volume / 100).toFixed(2)}`, '-c:a', 'libopus', '-b:a', '128k', '-ar', '48000', '-ac', '2', '-f', 'opus', 'pipe:1'],
     { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
   );
 
@@ -338,7 +338,7 @@ async function playNext(queue) {
   }
 
   try {
-    const stream = createStream(queue.current, await ensureYtDlp());
+    const stream = createStream(queue.current, await ensureYtDlp(), queue.volume);
     queue.stream = stream;
     queue.player.play(stream.resource);
     announce(queue, { embeds: [nowPlayingEmbed(queue.client, queue)], components: [controls(queue)] });
@@ -408,6 +408,7 @@ function createQueue(interaction, connection, ownConnection) {
     current: null,
     stream: null,
     loop: 'off',
+    volume: 100,
     skipRequested: false,
     destroyed: false,
     idleTimer: null,
@@ -578,10 +579,23 @@ module.exports = {
             .setRequired(true)
             .addChoices({ name: 'Off', value: 'off' }, { name: 'Current song', value: 'track' }, { name: 'Whole queue', value: 'queue' }),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('volume')
+        .setDescription('🔊 Change the volume (applies from the next song).')
+        .addIntegerOption((o) => o.setName('percent').setDescription('10 to 200 (100 = normal)').setRequired(true).setMinValue(10).setMaxValue(200)),
     ),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
+
+    if (sub === 'volume') {
+      const queue = await requireQueue(interaction, { needSong: false });
+      if (!queue) return undefined;
+      queue.volume = interaction.options.getInteger('percent', true);
+      return interaction.reply({ embeds: [embeds.success(interaction, 'Volume Changed', `Volume is now **${queue.volume}%**. It applies from the **next song** (use \`/music skip\` to hear it now).`)] });
+    }
 
     /* ---------- simple controls ---------- */
     if (sub !== 'play') {

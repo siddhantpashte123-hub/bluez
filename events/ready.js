@@ -12,6 +12,8 @@ const { syncInvites } = require('../commands/invites');
 const voice247 = require('../commands/247vc');
 
 const giveaways = require('../commands/gcreate');
+const reminders = require('../commands/remind');
+const birthdays = require('../commands/birthday');
 
 const WATCHDOG_INTERVAL_MS = 60_000;
 const GIVEAWAY_CHECK_MS = 10_000;
@@ -66,7 +68,7 @@ module.exports = {
     }
 
     /* ---- 3. Invite tracking (keeps data/invites.json up to date) ---- */
-    client.on(Events.GuildMemberAdd, (member) => safeSync(member.guild)); // someone joined -> an invite's "uses" went up
+    // (member joins are handled in events/guildMemberAdd.js, which also detects the inviter)
     client.on(Events.InviteCreate, (invite) => invite.guild?.invites && safeSync(invite.guild));
     client.on(Events.GuildCreate, (guild) => safeSync(guild));
     for (const guild of client.guilds.cache.values()) await safeSync(guild);
@@ -76,6 +78,17 @@ module.exports = {
     setInterval(() => {
       giveaways.tick(client).catch((err) => console.error('[Giveaway]', err.message));
     }, GIVEAWAY_CHECK_MS);
+
+    /* ---- 3c. Reminders ---- */
+    setInterval(() => {
+      reminders.tick(client).catch((err) => console.error('[Reminder]', err.message));
+    }, GIVEAWAY_CHECK_MS);
+
+    /* ---- 3d. Birthdays (one announcement per day) ---- */
+    setInterval(() => {
+      birthdays.tick(client).catch((err) => console.error('[Birthday]', err.message));
+    }, 10 * 60_000);
+    birthdays.tick(client).catch((err) => console.error('[Birthday]', err.message));
 
     /* ---- 4. 24/7 voice: rejoin saved channels, then keep checking ---- */
     await voice247.ensureAll(client);
