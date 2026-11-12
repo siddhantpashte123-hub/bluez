@@ -94,6 +94,7 @@ const CATEGORIES = [
     blurb: 'Sell products with UPI order tickets.',
     commands: [
       ['/shop setup <upi_id> <name>', 'UPI details used for the order QR (admins).'],
+      ['/shop ltc [address]', 'Accept Litecoin in order tickets (checked on the blockchain).'],
       ['/shop add | remove | stock', 'Manage products, prices and stock (admins).'],
       ['/shop products', 'Show all products with price and stock.'],
       ['/shop panel [channel]', 'Post the shop with Buy buttons (order ticket + QR, staff marks it paid).'],
@@ -107,6 +108,8 @@ const CATEGORIES = [
     blurb: 'Handy everyday tools.',
     commands: [
       ['/upiqr <upi_id> <amount> <name>', 'Generate a UPI payment QR (auto-splits above ₹2,000).'],
+      ['/ltc qr <address> <amount> [currency]', 'Litecoin payment QR at the live rate. Also `/ltc price`, `/ltc check <txid>`.'],
+      ['/calc <expression>', 'Calculator, e.g. `1999 * 3 + 18%`.'],
       ['/afk <reason>', 'Set your AFK status. I will tell people who ping you.'],
     ],
   },

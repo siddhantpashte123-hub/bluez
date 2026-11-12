@@ -230,10 +230,14 @@ Everything below is switched **off** until you set it up. Quick setup commands:
 | Reminders and birthdays | `/remind in:2h text:…`, `/birthday channel`, `/birthday set` |
 | Fun and info | `/fun 8ball\|coinflip\|dice\|choose`, `/info server\|avatar\|ping\|bot`, `/embed` |
 | Shop with UPI order tickets | `/shop setup upi_id:name@bank name:…` → `/shop add` → `/shop panel` |
+| Litecoin (LTC) payments | `/shop ltc address:ltc1…` (order tickets), `/ltc qr`, `/ltc price`, `/ltc check` |
+| Calculator | `/calc expression:1999 * 3 + 18%` |
 | Vouches (reviews) | `/vouch channel`, `/vouch give stars:5 review:…`, `/vouch stats` |
 
 **Shop flow:** a member presses a product button → a private `order-…` ticket opens → the bot posts the UPI QR for the price → the member pays and sends a screenshot → staff presses **Mark as Paid** (stock goes down by one, the order is written to the log channel).
 A bot **cannot verify UPI payments**. Staff must check their own UPI app before pressing the button.
+
+**Litecoin:** after `/shop ltc`, every order ticket gets a **Pay with LTC** button. The bot converts the ₹ price to LTC at the live rate and posts the address + QR. The buyer pays, presses **I Have Paid — Verify** and pastes the transaction ID. The bot checks the transaction on public block explorers: it must pay the shop address, be at least 99% of the amount, be newer than the order, have 1 confirmation and must not have been used for another order. Only then the order is marked as paid automatically. The bot never holds coins or keys — payments go straight to your own address. Double-check that address: crypto sent to a wrong address cannot be recovered.
 
 **Tickets:** the panel has **Support / Buy / Report** buttons, staff can **Claim** a ticket, and an **HTML transcript** (Discord-styled, opens in any browser, up to 2,000 messages) is sent as a compact file card to the ticket owner by DM and to the log channel when the ticket is closed. Run `/ticket setup` again to get the new panel.
 

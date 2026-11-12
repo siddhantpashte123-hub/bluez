@@ -70,6 +70,19 @@ module.exports = {
       return;
     }
 
+    // Pop-up forms opened by a button (same prefix routing as the buttons).
+    if (interaction.isModalSubmit()) {
+      const handler = BUTTON_HANDLERS[interaction.customId.split('_')[0]];
+      if (!handler?.handleModal) return;
+      try {
+        await handler.handleModal(interaction);
+      } catch (err) {
+        console.error(`[Modal:${interaction.customId}]`, err);
+        await sendError(interaction, err);
+      }
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const command = interaction.client.commands.get(interaction.commandName);
