@@ -11,8 +11,9 @@
  * Storage: data/levels.json   { "<guildId>": { "<userId>": { xp, level } } }
  *          data/settings.json { "<guildId>": { "levels": true } }
  */
-const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
+const cards = require('../utils/cards');
 const db = require('../utils/db');
 
 const XP_COOLDOWN_MS = 60_000;
@@ -153,7 +154,23 @@ module.exports = {
     const entry = db.guild('levels', guildId)[user.id] ?? { xp: 0, level: 0 };
     const { level, into, needed } = progress(entry.xp);
     const rank = board.findIndex(([id]) => id === user.id);
-    return interaction.reply({
+
+    // Premium look: rank card image (falls back to the embed below when images are not available).
+    if (cards.available()) {
+      await interaction.deferReply();
+      const member = interaction.guild.members.cache.get(user.id);
+      const png = await cards
+        .rankCard({ username: member?.displayName ?? user.username, avatarUrl: user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), level, rank: rank === -1 ? null : rank + 1, xp: into, needed, totalXp: entry.xp })
+        .catch((err) => (console.error('[/level rank] card failed:', err.message), null));
+      if (png) {
+        return interaction.editReply({
+          embeds: [embeds.make(interaction, { color: embeds.COLORS.cyan, image: 'attachment://rank.png', thumbnail: false })],
+          files: [new AttachmentBuilder(png, { name: 'rank.png' })],
+        });
+      }
+    }
+    const send = (payload) => (interaction.deferred ? interaction.editReply(payload) : interaction.reply(payload));
+    return send({
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.cyan,
