@@ -28,6 +28,12 @@ const isAddress = (text) => /^(?:[LM3][1-9A-HJ-NP-Za-km-z]{25,34}|ltc1[02-9ac-hj
 /** A transaction ID is 64 hex characters. */
 const isTxid = (text) => /^[0-9a-f]{64}$/i.test(String(text ?? '').trim());
 
+/**
+ * Pull the transaction ID out of what a user pasted: the ID itself or an
+ * explorer link that contains it (".../tx/<id>"). Returns '' when there is none.
+ */
+const extractTxid = (text) => String(text ?? '').match(/(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/i)?.[0].toLowerCase() ?? '';
+
 async function getJson(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: 'application/json', 'user-agent': 'discord-bot' } });
   if (res.status === 404) return null;
@@ -130,4 +136,4 @@ async function lookupTx(txid) {
 /** LTC that `tx` pays to `address`. */
 const paidTo = (tx, address) => tx.outputs.filter((o) => o.address === address).reduce((sum, o) => sum + o.sats, 0) / SATS;
 
-module.exports = { isAddress, isTxid, getRates, toLtc, formatLtc, paymentUri, paymentQr, lookupTx, paidTo };
+module.exports = { isAddress, isTxid, extractTxid, getRates, toLtc, formatLtc, paymentUri, paymentQr, lookupTx, paidTo };

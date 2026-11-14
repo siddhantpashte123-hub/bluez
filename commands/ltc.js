@@ -60,7 +60,7 @@ module.exports = {
     .addSubcommand((s) => s.setName('price').setDescription('📈 Live Litecoin price.'))
     .addSubcommand((s) =>
       s.setName('check').setDescription('🔎 Look a Litecoin transaction up.')
-        .addStringOption((o) => o.setName('txid').setDescription('Transaction ID (64 characters)').setRequired(true).setMaxLength(70))
+        .addStringOption((o) => o.setName('txid').setDescription('Transaction ID (hash) or the explorer link of the transaction').setRequired(true).setMaxLength(300))
         .addStringOption((o) => o.setName('address').setDescription('Show how much this address received').setMaxLength(90)),
     ),
 
@@ -95,9 +95,9 @@ module.exports = {
     }
 
     // check
-    const txid = interaction.options.getString('txid', true).trim();
+    const txid = ltc.extractTxid(interaction.options.getString('txid', true));
     const address = interaction.options.getString('address')?.trim();
-    if (!ltc.isTxid(txid)) return fail('Invalid Transaction ID', 'A transaction ID has 64 characters (0-9, a-f).');
+    if (!ltc.isTxid(txid)) return fail('Invalid Transaction ID', 'A transaction ID (hash) has 64 characters (0-9, a-f). You can also paste the link of the transaction page.');
     if (address && !ltc.isAddress(address)) return fail('Invalid Address', 'That does not look like a Litecoin address.');
     await interaction.reply({ embeds: [embeds.loading(interaction, 'Looking the transaction up...')] });
     let tx;
