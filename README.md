@@ -251,6 +251,19 @@ Settings and data of these features are stored in `data/*.json` (created automat
 
 ---
 
+## 🖼️ Image cards
+
+`/info ping` and `/level rank` answer with a drawn image card instead of plain text:
+
+![Ping card](assets/preview/ping.png)
+![Rank card](assets/preview/rank.png)
+
+- Drawn with `@napi-rs/canvas` (installed by `npm install`, no system packages needed). The Inter font is bundled in `assets/fonts`, so it also works on a VPS without any fonts.
+- If the package cannot be installed on a machine, the bot keeps working and these commands answer with their normal embed.
+- Names are drawn with Latin/Greek/Cyrillic letters only; emojis and other scripts are left out of the image.
+
+---
+
 ## ❗ Prefix commands (`!`)
 
 Every command works as a slash command **and** with the prefix `!`:

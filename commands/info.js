@@ -2,8 +2,9 @@
  * /info server | avatar [user] | ping | bot
  * (/userinfo has its own file.)
  */
-const { SlashCommandBuilder, InteractionContextType, ChannelType, version: djsVersion } = require('discord.js');
+const { SlashCommandBuilder, InteractionContextType, ChannelType, AttachmentBuilder, version: djsVersion } = require('discord.js');
 const embeds = require('../utils/embeds');
+const cards = require('../utils/cards');
 
 function uptime(ms) {
   const s = Math.floor(ms / 1000);
@@ -38,14 +39,30 @@ module.exports = {
     if (sub === 'ping') {
       const started = Date.now();
       await interaction.reply({ embeds: [embeds.loading(interaction, 'Pinging...')] });
+      const response = Date.now() - started;
+      const gateway = client.ws.ping;
+      const q = cards.quality(gateway >= 0 ? gateway : response);
+
+      // Premium look: the result is drawn as an image card.
+      const png = await cards
+        .pingCard({ botName: client.user.username, avatarUrl: client.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), gateway, response, uptime: client.uptime ?? 0, servers: client.guilds.cache.size })
+        .catch((err) => (console.error('[/info ping] card failed:', err.message), null));
+      if (png) {
+        return interaction.editReply({
+          embeds: [embeds.make(interaction, { color: parseInt(q.color.slice(1), 16), image: 'attachment://ping.png', thumbnail: false })],
+          files: [new AttachmentBuilder(png, { name: 'ping.png' })],
+        });
+      }
+
+      // Images not available on this machine -> normal embed.
       return interaction.editReply({
         embeds: [
           embeds.make(interaction, {
             color: embeds.COLORS.green,
             title: '🏓 Pong!',
             fields: [
-              { name: '⚡ Response', value: `\`${Date.now() - started} ms\``, inline: true },
-              { name: '💓 Discord gateway', value: client.ws.ping >= 0 ? `\`${Math.round(client.ws.ping)} ms\`` : '`measuring…`', inline: true },
+              { name: '⚡ Response', value: `\`${response} ms\``, inline: true },
+              { name: '💓 Discord gateway', value: gateway >= 0 ? `\`${Math.round(gateway)} ms\`` : '`measuring…`', inline: true },
             ],
           }),
         ],
