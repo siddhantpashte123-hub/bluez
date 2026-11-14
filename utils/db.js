@@ -68,4 +68,16 @@ function update(name, mutator) {
   return set(name, data);
 }
 
-module.exports = { get, set, update, DATA_DIR };
+/** One guild's part of a store (read-only view, {} when nothing is saved). */
+function guild(name, guildId) {
+  return get(name)[guildId] ?? {};
+}
+
+/** Change one guild's part of a store and save. Returns that guild's data. */
+function updateGuild(name, guildId, mutator) {
+  return update(name, (data) => {
+    mutator((data[guildId] ??= {}));
+  })[guildId];
+}
+
+module.exports = { get, set, update, guild, updateGuild, DATA_DIR };

@@ -28,7 +28,54 @@ function upiLink(upiId, amount, name) {
 /** "data:image/png;base64,AAAA" -> Buffer */
 const dataUrlToBuffer = (dataUrl) => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
 
+/**
+ * Build the QR message(s) for a payment. Used by /upiqr and by /shop buy.
+ * Returns an array of message payloads ({ embeds, files }), max 10 embeds each.
+ * Throws when the UPI ID or amount is invalid.
+ */
+async function buildQrPayloads(ctx, upiId, amount, name) {
+  const { generateQR, splitTransactionQR } = await loadUpiqr();
+  const parts =
+    amount > SPLIT_ABOVE
+      ? await splitTransactionQR({ UPI_ID: upiId, AMOUNT: amount, name })
+      : [{ amount, image: await generateQR({ UPI_ID: upiId, AMOUNT: amount, name }) }];
+
+  const total = parts.length;
+  const items = parts.map((part, i) => {
+    const fileName = `upi-qr-${i + 1}.png`;
+    const link = upiLink(upiId, part.amount, name);
+    const embed = embeds.make(ctx, {
+      color: embeds.COLORS.cyan,
+      title: total > 1 ? `💸 UPI Payment — QR ${i + 1} of ${total}` : '💸 UPI Payment QR',
+      description:
+        total > 1 && i === 0
+          ? `The total of **${rupees(amount)}** is above ${rupees(SPLIT_ABOVE)}, so it was split into **${total}** payments. Please scan **every** QR code.`
+          : 'Scan this QR code with any UPI app (GPay, PhonePe, Paytm, BHIM…).',
+      fields: [
+        { name: '🏦 UPI ID', value: `\`${upiId}\``, inline: true },
+        { name: '💰 Amount', value: `**${rupees(part.amount)}**`, inline: true },
+        { name: '👤 Payee Name', value: name, inline: true },
+        { name: '📲 Pay Now (UPI link)', value: `\`\`\`${link}\`\`\`` },
+      ],
+      image: `attachment://${fileName}`,
+      thumbnail: false,
+      footer: total > 1 ? `Part ${i + 1}/${total} • Total ${rupees(amount)}` : 'Open the link on a phone to pay',
+    });
+    return { embed, file: new AttachmentBuilder(dataUrlToBuffer(part.image), { name: fileName }) };
+  });
+
+  const payloads = [];
+  for (let i = 0; i < items.length; i += EMBEDS_PER_MESSAGE) {
+    const chunk = items.slice(i, i + EMBEDS_PER_MESSAGE);
+    payloads.push({ embeds: chunk.map((c) => c.embed), files: chunk.map((c) => c.file) });
+  }
+  return payloads;
+}
+
 module.exports = {
+  buildQrPayloads,
+  rupees,
+
   data: new SlashCommandBuilder()
     .setName('upiqr')
     .setDescription('💸 Generate a UPI payment QR code.')
@@ -44,15 +91,9 @@ module.exports = {
 
     await interaction.reply({ embeds: [embeds.loading(interaction, 'Generating UPI QR code...')] });
 
-    // ---- Generate the QR code(s) ----
-    let parts; // [{ amount, image(dataURL) }]
+    let payloads;
     try {
-      const { generateQR, splitTransactionQR } = await loadUpiqr();
-      if (amount > SPLIT_ABOVE) {
-        parts = await splitTransactionQR({ UPI_ID: upiId, AMOUNT: amount, name });
-      } else {
-        parts = [{ amount, image: await generateQR({ UPI_ID: upiId, AMOUNT: amount, name }) }];
-      }
+      payloads = await buildQrPayloads(interaction, upiId, amount, name);
     } catch (err) {
       console.error('[/upiqr]', err.message);
       const invalid = /validation/i.test(err.message);
@@ -69,37 +110,9 @@ module.exports = {
       });
     }
 
-    // ---- Build one embed + one PNG attachment per QR ----
-    const total = parts.length;
-    const items = parts.map((part, i) => {
-      const fileName = `upi-qr-${i + 1}.png`;
-      const link = upiLink(upiId, part.amount, name);
-      const embed = embeds.make(interaction, {
-        color: embeds.COLORS.cyan,
-        title: total > 1 ? `💸 UPI Payment — QR ${i + 1} of ${total}` : '💸 UPI Payment QR',
-        description:
-          total > 1 && i === 0
-            ? `The total of **${rupees(amount)}** is above ${rupees(SPLIT_ABOVE)}, so it was split into **${total}** payments. Please scan **every** QR code.`
-            : 'Scan this QR code with any UPI app (GPay, PhonePe, Paytm, BHIM…).',
-        fields: [
-          { name: '🏦 UPI ID', value: `\`${upiId}\``, inline: true },
-          { name: '💰 Amount', value: `**${rupees(part.amount)}**`, inline: true },
-          { name: '👤 Payee Name', value: name, inline: true },
-          { name: '📲 Pay Now (UPI link)', value: `\`\`\`${link}\`\`\`` },
-        ],
-        image: `attachment://${fileName}`,
-        thumbnail: false,
-        footer: total > 1 ? `Part ${i + 1}/${total} • Total ${rupees(amount)}` : 'Open the link on a phone to pay',
-      });
-      return { embed, file: new AttachmentBuilder(dataUrlToBuffer(part.image), { name: fileName }) };
-    });
-
-    // ---- Send in chunks of 10 embeds (first chunk replaces the loading embed) ----
-    for (let i = 0; i < items.length; i += EMBEDS_PER_MESSAGE) {
-      const chunk = items.slice(i, i + EMBEDS_PER_MESSAGE);
-      const payload = { embeds: chunk.map((c) => c.embed), files: chunk.map((c) => c.file) };
-      if (i === 0) await interaction.editReply(payload);
-      else await interaction.followUp(payload);
-    }
+    // The first message replaces the loading embed, the rest are follow-ups.
+    await interaction.editReply(payloads[0]);
+    for (const payload of payloads.slice(1)) await interaction.followUp(payload);
+    return undefined;
   },
 };
