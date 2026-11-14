@@ -1,9 +1,14 @@
 /**
  * /help
- * Premium multi-page help menu with button navigation:
- *   ◀ Previous | 🏠 Home | ▶ Next | ❌ Close
- * "⌛ Loading..." first, then the menu. Buttons are disabled after
- * 60 seconds of inactivity.
+ * Premium help menu, built as one "Components V2" card:
+ *   header with the bot avatar • stats • category list
+ *   dropdown to jump to a category
+ *   ◀ Back | 🏠 Home | Next ▶ | ✖ Close | Support Server
+ * "⌛ Loading..." first, then the menu. The controls are disabled after
+ * 60 seconds without a click.
+ *
+ * If Discord refuses the card for any reason, the classic embed menu
+ * (same pages, same buttons) is sent instead.
  */
 const {
   SlashCommandBuilder,
@@ -11,8 +16,14 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType,
   MessageFlags,
+  ContainerBuilder,
+  SectionBuilder,
+  ThumbnailBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  StringSelectMenuBuilder,
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 
@@ -194,11 +205,95 @@ const CATEGORIES = [
 ];
 
 const TOTAL_PAGES = CATEGORIES.length + 1;
+const COMMAND_COUNT = CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
 
-/** Build the embed of one page. */
+/* ------------------------------------------------------------------ */
+/*  Premium card (Components V2)                                       */
+/* ------------------------------------------------------------------ */
+
+const text = (content) => new TextDisplayBuilder().setContent(content);
+const line = (large = false) => new SeparatorBuilder().setDivider(true).setSpacing(large ? SeparatorSpacingSize.Large : SeparatorSpacingSize.Small);
+
+/** Dropdown with every category. */
+function categoryMenu(page, disabled) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('help_select')
+      .setPlaceholder(page === 0 ? '✦ Choose a category…' : `${CATEGORIES[page - 1].emoji} ${CATEGORIES[page - 1].name}`)
+      .setDisabled(disabled)
+      .addOptions(
+        { label: 'Home', value: '0', emoji: '🏠', description: 'Overview of everything', default: page === 0 },
+        ...CATEGORIES.map((c, i) => ({ label: c.name, value: `${i + 1}`, emoji: c.emoji, description: `${c.commands.length} commands • ${c.blurb}`.slice(0, 100), default: page === i + 1 })),
+      ),
+  );
+}
+
+/** Navigation row. */
+function buttons(page, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('help_prev').setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId('help_home').setEmoji('🏠').setStyle(ButtonStyle.Primary).setDisabled(disabled || page === 0),
+    new ButtonBuilder().setCustomId('help_next').setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId('help_close').setEmoji('✖️').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+    // Link buttons open the URL directly; it stays clickable after the menu times out.
+    new ButtonBuilder().setLabel('Support Server').setEmoji('🛟').setStyle(ButtonStyle.Link).setURL(SUPPORT_URL),
+  );
+}
+
+/** The whole menu as one card. */
+function card(interaction, page, disabled = false) {
+  const { client } = interaction;
+  const container = new ContainerBuilder();
+
+  if (page === 0) {
+    const ping = client.ws?.ping >= 0 ? `${Math.round(client.ws.ping)} ms` : '—';
+    container
+      .setAccentColor(embeds.COLORS.blurple)
+      .addSectionComponents(
+        new SectionBuilder()
+          .addTextDisplayComponents(
+            text(`# ${embeds.e('boostShine')} ${client.user.username}`),
+            text(`**Your all-in-one server bot.**\nHey ${interaction.user}! ${embeds.e('bow')} Pick a category from the menu below.`),
+          )
+          .setThumbnailAccessory(new ThumbnailBuilder().setURL(client.user.displayAvatarURL({ size: 256 }))),
+      )
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(
+        text(
+          `${embeds.e('boostGem15')} **Commands** \`${COMMAND_COUNT}\`  •  ${embeds.e('boostGem24')} **Categories** \`${CATEGORIES.length}\`  •  ${embeds.e('nitro')} **Servers** \`${client.guilds.cache.size}\`  •  📶 **Ping** \`${ping}\`\n` +
+            '-# Works with slash commands **and** the prefix `!` — for example `/calc` or `!calc 2+2`',
+        ),
+      )
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(text(`### ${embeds.e('gift')} Categories\n${CATEGORIES.map((c) => `${c.emoji} **${c.name}** — ${c.blurb}`).join('\n')}`));
+  } else {
+    const category = CATEGORIES[page - 1];
+    container
+      .setAccentColor(category.color)
+      .addTextDisplayComponents(text(`## ${category.emoji} ${category.name}\n-# ${category.blurb}`))
+      .addSeparatorComponents(line())
+      .addTextDisplayComponents(text(category.commands.map(([usage, info]) => `**\`${usage}\`**\n> ${info}`).join('\n')));
+  }
+
+  container
+    .addSeparatorComponents(line(true))
+    .addActionRowComponents(categoryMenu(page, disabled), buttons(page, disabled))
+    .addTextDisplayComponents(text(`-# Page ${page + 1}/${TOTAL_PAGES}  •  ${embeds.e('tick')} Support: [dsc.gg/bluehost](${SUPPORT_URL})${disabled ? '  •  Menu expired, run /help again' : ''}`));
+
+  return { components: [container], allowedMentions: { parse: [] } };
+}
+
+/** Small card used for "loading" and "closed". */
+function notice(content, color) {
+  return { components: [new ContainerBuilder().setAccentColor(color).addTextDisplayComponents(text(content))], allowedMentions: { parse: [] } };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Classic embed menu (fallback)                                      */
+/* ------------------------------------------------------------------ */
+
 function pageEmbed(interaction, page) {
   if (page === 0) {
-    const commandCount = CATEGORIES.reduce((sum, c) => sum + c.commands.length, 0);
     return embeds.make(interaction, {
       color: embeds.COLORS.blurple,
       title: `${embeds.e('bow')} ${interaction.client.user.username} — Help Menu`,
@@ -207,57 +302,56 @@ function pageEmbed(interaction, page) {
         'Use the buttons below to browse the categories.\n' +
         'Every command works as a slash command **and** with the prefix `!` — e.g. `/calc` or `!calc 2+2`.\n\u200b',
       fields: [
-        ...CATEGORIES.map((c, i) => ({
-          name: `${c.emoji} ${c.name}`,
-          value: `${c.blurb}\n\`Page ${i + 2}\` • ${c.commands.length} commands`,
-          inline: true,
-        })),
-        { name: '📈 Stats', value: `**${commandCount}** commands\n**${interaction.client.guilds.cache.size}** servers`, inline: true },
-        { name: '🧭 Navigation', value: '◀ Previous  •  🏠 Home  •  ▶ Next  •  ❌ Close' },
+        ...CATEGORIES.map((c, i) => ({ name: `${c.emoji} ${c.name}`, value: `${c.blurb}\n\`Page ${i + 2}\` • ${c.commands.length} commands`, inline: true })),
+        { name: '📈 Stats', value: `**${COMMAND_COUNT}** commands\n**${interaction.client.guilds.cache.size}** servers`, inline: true },
         { name: `${embeds.e('nitro')} Support Server`, value: `Need help or found a bug? Join us: **[dsc.gg/bluehost](${SUPPORT_URL})**` },
       ],
       footer: `Page 1/${TOTAL_PAGES}`,
     });
   }
-
   const category = CATEGORIES[page - 1];
   return embeds.make(interaction, {
     color: category.color,
     title: `${category.emoji} ${category.name} Commands`,
-    description:
-      `*${category.blurb}*\n\n` +
-      category.commands.map(([usage, text]) => `${category.emoji} **\`${usage}\`**\n┗ ${text}`).join('\n\n'),
+    description: `*${category.blurb}*\n\n${category.commands.map(([usage, info]) => `${category.emoji} **\`${usage}\`**\n┗ ${info}`).join('\n\n')}`,
     footer: `Page ${page + 1}/${TOTAL_PAGES}`,
   });
 }
 
-/** Build the navigation row. */
-function buttons(page, disabled = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('help_prev').setEmoji('◀️').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('help_home').setEmoji('🏠').setLabel('Home').setStyle(ButtonStyle.Success).setDisabled(disabled || page === 0),
-    new ButtonBuilder().setCustomId('help_next').setEmoji('▶️').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('help_close').setEmoji('❌').setLabel('Close').setStyle(ButtonStyle.Danger).setDisabled(disabled),
-    // Link buttons open the URL directly; it stays clickable after the menu times out.
-    new ButtonBuilder().setLabel('Support Server').setEmoji('🛟').setStyle(ButtonStyle.Link).setURL(SUPPORT_URL),
-  );
-}
+/* ------------------------------------------------------------------ */
+/*  Command                                                            */
+/* ------------------------------------------------------------------ */
 
 module.exports = {
+  card, // exported for tests
+
   data: new SlashCommandBuilder()
     .setName('help')
     .setDescription('✨ Open the interactive help menu.')
     .setContexts(InteractionContextType.Guild),
 
   async execute(interaction) {
-    // "Animation": loading embed first, then edit into the real menu.
-    await interaction.reply({ embeds: [embeds.loading(interaction, 'Loading help menu...')] });
-    await embeds.sleep(900);
-
     let page = 0;
-    const message = await interaction.editReply({ embeds: [pageEmbed(interaction, page)], components: [buttons(page)] });
+    let premium = true;
+    /** Payload of the current page in the active style. */
+    const view = (disabled = false) =>
+      premium ? card(interaction, page, disabled) : { embeds: [pageEmbed(interaction, page)], components: [buttons(page, disabled)] };
 
-    const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, idle: IDLE_MS });
+    // "Animation": loading first, then the real menu.
+    let message;
+    try {
+      await interaction.reply({ ...notice('⌛ **Loading help menu...**', embeds.COLORS.cyan), flags: MessageFlags.IsComponentsV2 });
+      await embeds.sleep(700);
+      message = await interaction.editReply(view());
+    } catch (err) {
+      // The card was refused -> classic embeds. (A message cannot switch style, so a new one is sent if needed.)
+      console.error('[/help] premium card failed, using the classic menu:', err.message);
+      premium = false;
+      message = interaction.replied ? await interaction.followUp(view()) : await interaction.reply({ ...view(), withResponse: true }).then((r) => r?.resource?.message ?? interaction.fetchReply());
+    }
+    if (!message?.createMessageComponentCollector) return;
+
+    const collector = message.createMessageComponentCollector({ idle: IDLE_MS });
 
     collector.on('collect', async (click) => {
       try {
@@ -270,6 +364,9 @@ module.exports = {
         }
 
         switch (click.customId) {
+          case 'help_select':
+            page = Math.min(TOTAL_PAGES - 1, Math.max(0, Number(click.values?.[0]) || 0));
+            break;
           case 'help_prev':
             page = (page - 1 + TOTAL_PAGES) % TOTAL_PAGES;
             break;
@@ -279,26 +376,25 @@ module.exports = {
           case 'help_home':
             page = 0;
             break;
-          case 'help_close':
+          case 'help_close': {
             collector.stop('closed');
-            return void (await click.update({
-              embeds: [embeds.info(interaction, `${embeds.e('bow')} Help Menu Closed`, `Run \`/help\` whenever you need me again.\nSupport server: **[dsc.gg/bluehost](${SUPPORT_URL})**`, { color: embeds.COLORS.pink })],
-              components: [],
-            }));
+            const closed = `${embeds.e('bow')} **Help menu closed.** Run \`/help\` whenever you need me again.\n-# Support server: [dsc.gg/bluehost](${SUPPORT_URL})`;
+            return void (await click.update(premium ? notice(closed, embeds.COLORS.pink) : { embeds: [embeds.info(interaction, 'Help Menu Closed', closed, { color: embeds.COLORS.pink })], components: [] }));
+          }
           default:
             return;
         }
 
-        await click.update({ embeds: [pageEmbed(interaction, page)], components: [buttons(page)] });
+        await click.update(view());
       } catch (err) {
-        console.error('[/help] button error:', err.message);
+        console.error('[/help] menu error:', err.message);
       }
     });
 
-    // 60s without a click -> grey out the buttons.
+    // 60s without a click -> grey out the controls.
     collector.on('end', async (_collected, reason) => {
       if (reason === 'closed') return;
-      await interaction.editReply({ components: [buttons(page, true)] }).catch(() => {});
+      await message.edit(view(true)).catch(() => {});
     });
   },
 };
