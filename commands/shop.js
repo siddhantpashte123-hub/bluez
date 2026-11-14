@@ -162,7 +162,7 @@ async function handleLtcVerifyButton(interaction, productId) {
       .setTitle('Verify Litecoin Payment')
       .addComponents(
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('txid').setLabel('Transaction ID (TXID / hash)').setPlaceholder('64 characters, copy it from your wallet').setStyle(TextInputStyle.Short).setMinLength(64).setMaxLength(80).setRequired(true),
+          new TextInputBuilder().setCustomId('txid').setLabel('Transaction ID (hash) or explorer link').setPlaceholder('Paste the transaction hash, or the "View Transaction" link').setStyle(TextInputStyle.Short).setMinLength(64).setMaxLength(300).setRequired(true),
         ),
       ),
   );
@@ -177,8 +177,8 @@ async function handleModal(interaction) {
   if (!quote) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'No LTC Payment Requested', 'Press **Pay with LTC** first.')));
   if (order.paid) return interaction.reply(embeds.ephemeral(embeds.warn(interaction, 'Already Paid', 'This order is already paid.')));
 
-  const txid = interaction.fields.getTextInputValue('txid').trim().toLowerCase();
-  if (!ltc.isTxid(txid)) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Invalid Transaction ID', 'A transaction ID has 64 characters (0-9, a-f). Copy it from your wallet.')));
+  const txid = ltc.extractTxid(interaction.fields.getTextInputValue('txid'));
+  if (!ltc.isTxid(txid)) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Invalid Transaction ID', 'A transaction ID (hash) has 64 characters (0-9, a-f). Copy it from your wallet, or paste the link of the transaction page.')));
   if ((shopOf(guild.id).usedTx ?? []).includes(txid)) {
     return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Transaction Already Used', 'This transaction was already used for another order.')));
   }
