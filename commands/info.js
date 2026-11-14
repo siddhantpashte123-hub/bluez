@@ -83,7 +83,7 @@ module.exports = {
           fields: [
             { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
             { name: '👥 Members', value: `${guild.memberCount}`, inline: true },
-            { name: '💎 Boosts', value: `${guild.premiumSubscriptionCount ?? 0} (Level ${guild.premiumTier})`, inline: true },
+            { name: `${embeds.e('boostGem15')} Boosts`, value: `${guild.premiumSubscriptionCount ?? 0} (Level ${guild.premiumTier})`, inline: true },
             { name: '💬 Text channels', value: `${channels.filter((c) => c.type === ChannelType.GuildText).size}`, inline: true },
             { name: '🔊 Voice channels', value: `${channels.filter((c) => c.type === ChannelType.GuildVoice).size}`, inline: true },
             { name: '🎭 Roles', value: `${guild.roles.cache.size - 1}`, inline: true },

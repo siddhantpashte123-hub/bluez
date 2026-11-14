@@ -63,8 +63,8 @@ async function addXp(message) {
         embeds: [
           embeds.make(message, {
             color: embeds.COLORS.gold,
-            title: `${embeds.e('giftLegend')} Level Up!`,
-            description: `${message.author} reached **level ${leveledTo}**! ${embeds.e('bow')}`,
+            title: `${embeds.e('boostShine')} Level Up!`,
+            description: `${message.author} reached **level ${leveledTo}**! ${embeds.e('boostGem24')}`,
             thumbnail: message.author.displayAvatarURL({ size: 256 }),
           }),
         ],

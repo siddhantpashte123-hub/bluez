@@ -50,7 +50,7 @@ function productsEmbed(ctx, guild) {
   const list = productsOf(guild.id);
   return embeds.make(ctx, {
     color: embeds.COLORS.cyan,
-    title: `${embeds.e('gift')} ${guild.name} — Shop`,
+    title: `${embeds.e('nitro')} ${guild.name} — Shop`,
     description: list.length
       ? list.map(([, p]) => `### ${p.name} — ${rupees(p.price)}\n${p.description ? `${p.description}\n` : ''}${stockText(p.stock)}`).join('\n')
       : '*No products yet.*',

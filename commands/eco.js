@@ -64,7 +64,7 @@ module.exports = {
         w.coins += DAILY_AMOUNT;
         w.lastDaily = now;
       });
-      return interaction.reply({ embeds: [embeds.success(interaction, 'Daily Reward', `${embeds.e('gift')} You collected ${coins(DAILY_AMOUNT)} coins.\nBalance: ${coins(updated.coins)}`)] });
+      return interaction.reply({ embeds: [embeds.success(interaction, 'Daily Reward', `${embeds.e('boostGem15')} You collected ${coins(DAILY_AMOUNT)} coins.\nBalance: ${coins(updated.coins)}`)] });
     }
 
     if (sub === 'work') {

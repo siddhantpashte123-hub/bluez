@@ -251,6 +251,31 @@ Settings and data of these features are stored in `data/*.json` (created automat
 
 ---
 
+## ❗ Prefix commands (`!`)
+
+Every command works as a slash command **and** with the prefix `!`:
+
+```
+!help
+!calc 1999 * 3 + 18%
+!remind 10m drink water
+!mod warn @user stop spamming
+!gcreate "Nitro Classic" 1d 2
+!announce Server is back online! #news @News
+!embed title:Hello description:Welcome to the server color:#ff0000 footer:Team
+```
+
+- Options are written **in order**. Text with spaces goes in `"quotes"`; the last required text option takes everything that is left.
+- Optional text options are written **by name** (`name:value`), with the same names the slash command shows.
+- Wrong input shows the usage of the command. `!command` without a subcommand lists its subcommands.
+- The permission a slash command needs is also required for the prefix version.
+- Replies that are "only visible to you" with slash commands are normal replies with the prefix.
+- The prefix needs the **Message Content** intent (already required above). To change it, edit `PREFIX` in `utils/prefix.js`.
+
+`/announce message [title] [channel] [ping] [role] [image] [color]` posts an announcement embed and can ping `@everyone`, `@here` or a role (needs Manage Server; for pings both you and the bot need "Mention @everyone, @here and All Roles").
+
+---
+
 ## 😀 Custom emojis
 
 The bot uses five custom emojis (tick, caution, two gifts, bow). Their IDs are listed at the top of `utils/embeds.js`.

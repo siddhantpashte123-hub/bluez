@@ -81,7 +81,7 @@ module.exports = {
     const embed = embeds.make(interaction, {
       color: embeds.COLORS.gold,
       title: `${embeds.e('tick')} Vouch #${total}`,
-      description: `${stars(rating)}\n${text}`,
+      description: `${stars(rating)}\n${text} ${embeds.e('boostGem24')}`,
       fields: [{ name: '👤 From', value: `${user}`, inline: true }, { name: '🧾 Total vouches', value: `${total}`, inline: true }],
       thumbnail: user.displayAvatarURL({ size: 256 }),
     });

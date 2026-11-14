@@ -62,7 +62,7 @@ module.exports = {
 
     /* ---- 2. Presence ---- */
     try {
-      client.user.setPresence({ activities: [{ name: '/help • 24/7 online', type: ActivityType.Watching }], status: 'online' });
+      client.user.setPresence({ activities: [{ name: '/help or !help • 24/7 online', type: ActivityType.Watching }], status: 'online' });
     } catch (err) {
       console.error('[Ready] Could not set presence:', err.message);
     }

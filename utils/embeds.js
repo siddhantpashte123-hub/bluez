@@ -34,6 +34,10 @@ const EMOJIS = {
   gift: { id: '1570032634736939129', name: '999108giftingluminary', fallback: '🎁' },
   giftLegend: { id: '1570032632316563558', name: '493187giftinglegend', fallback: '🎁' },
   bow: { id: '1570031909273346078', name: 'Screenshot20261109181001', fallback: '🎀' },
+  boostGem15: { id: '1571107902931079309', name: '661370boostgemsmonth15', fallback: '💎' },
+  boostGem24: { id: '1571107898505961494', name: '70999boostgemsmonth24', fallback: '💖' },
+  nitro: { id: '1571107894034833439', name: '53842nitroboost', fallback: '🚀' },
+  boostShine: { id: '1571107890893422642', name: '70382boostshineanimation', fallback: '✨' },
 };
 
 /** key -> ready-to-use emoji string. Filled by loadEmojis(); fallbacks until then. */

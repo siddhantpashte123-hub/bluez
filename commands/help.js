@@ -33,7 +33,8 @@ const CATEGORIES = [
       ['/mod ban | kick | timeout | untimeout <user>', 'Punish or un-mute a member (with reason).'],
       ['/mod warn <user> <reason>', 'Warn a member. See history with `/mod warnings`, reset with `/mod clearwarns`.'],
       ['/mod lock | unlock | slowmode', 'Lock the channel or set a slow mode.'],
-      ['/embed <title> <description>', 'Send a custom embed / announcement.'],
+      ['/embed <title> <description> [color] [image] [thumbnail] [footer]', 'Send a custom embed.'],
+      ['/announce <message> [title] [channel] [ping] [role]', 'Post an announcement, optionally pinging @everyone, @here or a role.'],
     ],
   },
   {
@@ -200,7 +201,8 @@ function pageEmbed(interaction, page) {
       title: `${embeds.e('bow')} ${interaction.client.user.username} — Help Menu`,
       description:
         `Hey ${interaction.user}! ${embeds.e('gift')} Welcome to the command centre.\n` +
-        'Use the buttons below to browse the categories.\n\u200b',
+        'Use the buttons below to browse the categories.\n' +
+        'Every command works as a slash command **and** with the prefix `!` — e.g. `/calc` or `!calc 2+2`.\n\u200b',
       fields: [
         ...CATEGORIES.map((c, i) => ({
           name: `${c.emoji} ${c.name}`,
