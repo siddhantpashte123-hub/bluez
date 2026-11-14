@@ -18,6 +18,9 @@ const embeds = require('../utils/embeds');
 
 const IDLE_MS = 60_000;
 
+/** Support server, shown on the home page and as a button under every page. */
+const SUPPORT_URL = 'https://dsc.gg/bluehost';
+
 /** Category pages (page 0 is the generated "Home" page). */
 const CATEGORIES = [
   {
@@ -211,6 +214,7 @@ function pageEmbed(interaction, page) {
         })),
         { name: '📈 Stats', value: `**${commandCount}** commands\n**${interaction.client.guilds.cache.size}** servers`, inline: true },
         { name: '🧭 Navigation', value: '◀ Previous  •  🏠 Home  •  ▶ Next  •  ❌ Close' },
+        { name: `${embeds.e('nitro')} Support Server`, value: `Need help or found a bug? Join us: **[dsc.gg/bluehost](${SUPPORT_URL})**` },
       ],
       footer: `Page 1/${TOTAL_PAGES}`,
     });
@@ -234,6 +238,8 @@ function buttons(page, disabled = false) {
     new ButtonBuilder().setCustomId('help_home').setEmoji('🏠').setLabel('Home').setStyle(ButtonStyle.Success).setDisabled(disabled || page === 0),
     new ButtonBuilder().setCustomId('help_next').setEmoji('▶️').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(disabled),
     new ButtonBuilder().setCustomId('help_close').setEmoji('❌').setLabel('Close').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+    // Link buttons open the URL directly; it stays clickable after the menu times out.
+    new ButtonBuilder().setLabel('Support Server').setEmoji('🛟').setStyle(ButtonStyle.Link).setURL(SUPPORT_URL),
   );
 }
 
@@ -276,7 +282,7 @@ module.exports = {
           case 'help_close':
             collector.stop('closed');
             return void (await click.update({
-              embeds: [embeds.info(interaction, `${embeds.e('bow')} Help Menu Closed`, 'Run `/help` whenever you need me again.', { color: embeds.COLORS.pink })],
+              embeds: [embeds.info(interaction, `${embeds.e('bow')} Help Menu Closed`, `Run \`/help\` whenever you need me again.\nSupport server: **[dsc.gg/bluehost](${SUPPORT_URL})**`, { color: embeds.COLORS.pink })],
               components: [],
             }));
           default:
