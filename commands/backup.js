@@ -3,17 +3,20 @@ const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, Attach
 const { randomUUID } = require('node:crypto');
 const restore = require('../utils/restore');
 const audit = require('../utils/audit');
-const activeRestores = new Set();
+const activeRestores = require('../utils/backup-lock');
+const upload = require('../utils/backup-upload');
 const embeds = require('../utils/embeds');
 
 module.exports = {
   data: new SlashCommandBuilder().setName('backup').setDescription('Export a server configuration snapshot (administrators).')
     .setContexts(InteractionContextType.Guild).setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((s) => s.setName('upload').setDescription('Replace channels using a secret backup code (destructive).'))
     .addSubcommand((s) => s.setName('export').setDescription('Download a private JSON snapshot of roles and channels.'))
     .addSubcommand((s) => s.setName('restore').setDescription('Preview a safe additive roles/channels restore (administrator).').addAttachmentOption((o) => o.setName('snapshot').setDescription('JSON export from /backup export').setRequired(true))),
   async execute(interaction) {
     if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use the Slash Command', 'For privacy, use `/backup` slash commands.')] });
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Administrator Only', 'You need the Administrator permission.')));
+    if (interaction.options.getSubcommand() === 'upload') return upload(interaction);
     await interaction.deferReply({ flags: 64 });
     const { guild } = interaction;
     if (interaction.options.getSubcommand() === 'restore') {
