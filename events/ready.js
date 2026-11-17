@@ -14,6 +14,7 @@ const voice247 = require('../commands/247vc');
 const giveaways = require('../commands/gcreate');
 const reminders = require('../commands/remind');
 const birthdays = require('../commands/birthday');
+const ticketInactivity = require('../utils/ticket-inactivity');
 
 const WATCHDOG_INTERVAL_MS = 60_000;
 const GIVEAWAY_CHECK_MS = 10_000;
@@ -89,6 +90,8 @@ module.exports = {
       birthdays.tick(client).catch((err) => console.error('[Birthday]', err.message));
     }, 10 * 60_000);
     birthdays.tick(client).catch((err) => console.error('[Birthday]', err.message));
+
+    setInterval(() => { ticketInactivity.tick(client).catch((err) => console.error('[Ticket inactivity]', err.message)); }, 60_000);
 
     /* ---- 4. 24/7 voice: rejoin saved channels, then keep checking ---- */
     await voice247.ensureAll(client);

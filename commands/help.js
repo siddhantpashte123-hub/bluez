@@ -61,7 +61,9 @@ const CATEGORIES = [
       ['/automod word <add | remove> <word>', 'Manage the bad-word list. `/automod status` shows everything.'],
       ['/logs set <channel> | off', 'Log deleted/edited messages, joins, leaves and mod actions.'],
       ['/antiraid set <enabled> [min_account_age_days] [join_limit]', 'Kick brand-new accounts and mass joins.'],
-      ['/backup export', 'Privately export roles, channels and selected settings (admin; no automatic restore).'],
+      ['/backup export | restore', 'Snapshot export and confirmed safe skeleton restore (admin).'],
+      ['/audit', 'View supported bot setting changes (admin).'],
+      ['/branding set | reset', 'Customize the bot look for this server.'],
     ],
   },
   {
@@ -115,6 +117,8 @@ const CATEGORIES = [
       ['/shop products', 'Show all products with price and stock.'],
       ['/shop coupon | uncoupon', 'Manage expiring, reusable discount codes (admin).'],
       ['/shop orders | delivered', 'Private order history; staff can mark a paid order delivered.'],
+      ['/shop dashboard | couponstats | notes', 'Private sales and coupon statistics (admin).'],
+      ['/shop category', 'Assign a product category (admin).'],
       ['/shop panel [channel]', 'Post the shop with Buy buttons (order ticket + QR, staff marks it paid).'],
       ['/vouch give <stars> <review> | stats | channel', 'Customer reviews with a counter.'],
     ],
@@ -201,6 +205,8 @@ const CATEGORIES = [
     commands: [
       ['/ticket setup [channel] [category] [support_role]', 'Post the ticket panel (Support / Buy / Report buttons).'],
       ['/ticket dashboard', 'Private staff stats and ticket feedback.'],
+      ['/ticket category | inactivity | priority | note', 'Configure ticket types, reminders, priority and private order notes.'],
+      ['/staff status | list', 'Set and view support availability.'],
       ['/ticket close', 'Close the ticket you are in.'],
       ['/ticket add <user>', 'Add a member to the current ticket.'],
       ['/ticket remove <user>', 'Remove a member from the current ticket.'],
@@ -227,7 +233,7 @@ function categoryMenu(page, disabled) {
       .setDisabled(disabled)
       .addOptions(
         { label: 'Home', value: '0', emoji: '🏠', description: 'Overview of everything', default: page === 0 },
-        ...CATEGORIES.map((c, i) => ({ label: c.name, value: `${i + 1}`, emoji: c.emoji, description: `${c.commands.length} commands • ${c.blurb}`.slice(0, 100), default: page === i + 1 })),
+        ...CATEGORIES.map((c, i) => ({ label: c.name, value: `${i + 1}`, emoji: c.emoji, description: `${c.commands.length} entries • ${c.blurb}`.slice(0, 100), default: page === i + 1 })),
       ),
   );
 }
@@ -251,25 +257,30 @@ function card(interaction, page, disabled = false) {
 
   if (page === 0) {
     const ping = client.ws?.ping >= 0 ? `${Math.round(client.ws.ping)} ms` : '—';
+    const branding = require('../utils/db').guild('settings', interaction.guildId ?? interaction.guild?.id).branding ?? {};
+    const title = branding.name || client.user.username;
+    const color = branding.color ?? embeds.COLORS.blurple;
     container
-      .setAccentColor(embeds.COLORS.blurple)
+      .setAccentColor(color)
       .addSectionComponents(
-        new SectionBuilder()
-          .addTextDisplayComponents(
-            text(`# ${embeds.e('boostShine')} ${client.user.username}`),
-            text(`**Your all-in-one server bot.**\nHey ${interaction.user}! ${embeds.e('bow')} Pick a category from the menu below.`),
-          )
-          .setThumbnailAccessory(new ThumbnailBuilder().setURL(client.user.displayAvatarURL({ size: 256 }))),
+        new SectionBuilder().addTextDisplayComponents(
+          text(`# ${embeds.e('boostShine')} ${title}  ·  COMMAND CENTRE`),
+          text(`Welcome, ${interaction.user} ${embeds.e('bow')}\nExplore the bot using the category menu below.`),
+        ).setThumbnailAccessory(new ThumbnailBuilder().setURL(client.user.displayAvatarURL({ size: 256 }))),
       )
       .addSeparatorComponents(line())
-      .addTextDisplayComponents(
-        text(
-          `${embeds.e('boostGem15')} **Commands** \`${COMMAND_COUNT}\`  •  ${embeds.e('boostGem24')} **Categories** \`${CATEGORIES.length}\`  •  ${embeds.e('nitro')} **Servers** \`${client.guilds.cache.size}\`  •  📶 **Ping** \`${ping}\`\n` +
-            '-# Works with slash commands **and** the prefix `!` — for example `/calc` or `!calc 2+2`',
-        ),
-      )
+      .addTextDisplayComponents(text(
+        `**${client.commands?.size ?? COMMAND_COUNT}** commands　 •　 **${CATEGORIES.length}** categories　 •　 **${client.guilds.cache.size}** servers　 •　 **${ping}**\n` +
+        '-# Slash commands and `!` prefix • Private actions are slash-only'
+      ))
       .addSeparatorComponents(line())
-      .addTextDisplayComponents(text(`### ${embeds.e('gift')} Categories\n${CATEGORIES.map((c) => `${c.emoji} **${c.name}** — ${c.blurb}`).join('\n')}`));
+      .addTextDisplayComponents(text(
+        `### ✦ Explore your toolkit\n` +
+        `🛡️ Moderation & protection　•　🎫 Tickets & support\n` +
+        `🛒 Shop & orders　•　⭐ Levels & community\n` +
+        `🎵 Music & voice　•　🤖 Automation & utilities\n\n` +
+        `-# Select any category below for commands and examples.`
+      ));
   } else {
     const category = CATEGORIES[page - 1];
     container

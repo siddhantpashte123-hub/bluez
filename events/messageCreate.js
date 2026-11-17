@@ -11,6 +11,7 @@ const db = require('../utils/db');
 const automod = require('../commands/automod');
 const prefix = require('../utils/prefix');
 const levels = require('../commands/level');
+const ticketInactivity = require('../utils/ticket-inactivity');
 const { reactionOf } = require('../commands/autoreacter');
 
 const RESPONDER_COOLDOWN_MS = 2500; // per channel, stops reply spam
@@ -113,6 +114,8 @@ module.exports = {
   async execute(message) {
     // Ignore DMs, bots, webhooks and system messages.
     if (!message.inGuild() || message.author.bot || message.webhookId || message.system) return;
+
+    ticketInactivity.activity(message);
 
     // Can the bot even talk here?
     const me = message.guild.members.me;

@@ -16,7 +16,9 @@
 const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ChannelType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const audit = require('../utils/audit');
 const cards = require('../utils/cards');
+const branding = require('../utils/branding');
 
 const DEFAULT_WELCOME = 'Welcome {user} to **{server}**! You are member **#{count}**.';
 const DEFAULT_GOODBYE = '**{username}** left the server. We are now **{count}** members.';
@@ -60,7 +62,7 @@ async function welcomeWithCard(member, config, inviterId = null) {
   if (!cards.available()) return payload;
   const png = await cards.welcomeCard({ username: member.displayName ?? member.user.username,
     avatarUrl: member.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
-    server: member.guild.name, count: member.guild.memberCount }).catch((err) => (console.error('[Welcome] card:', err.message), null));
+    server: member.guild.name, count: member.guild.memberCount, accent: branding.accent(member.guild.id) }).catch((err) => (console.error('[Welcome] card:', err.message), null));
   if (png) {
     payload.embeds[0].setImage('attachment://welcome.png');
     payload.files = [new AttachmentBuilder(png, { name: 'welcome.png' })];
@@ -120,6 +122,7 @@ module.exports = {
       db.updateGuild('settings', guild.id, (s) => {
         s[key] = { channelId: channel.id, message: message ?? null };
       });
+      audit.record(guild.id, interaction.user.id, 'welcome.set', key);
       return interaction.reply({
         embeds: [
           embeds.success(interaction, key === 'welcome' ? 'Welcome Messages Enabled' : 'Goodbye Messages Enabled', `Messages will be posted in ${channel}.`, {
@@ -136,6 +139,7 @@ module.exports = {
         db.updateGuild('settings', guild.id, (s) => {
           delete s.autoRoleId;
         });
+        audit.record(guild.id, interaction.user.id, 'welcome.autorole', 'disabled');
         return interaction.reply({ embeds: [embeds.success(interaction, 'Auto-Role Disabled', 'New members will not get a role automatically.')] });
       }
       if (role.managed || role.id === guild.id) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Invalid Role', 'That role cannot be given to members.')));
@@ -145,6 +149,7 @@ module.exports = {
       db.updateGuild('settings', guild.id, (s) => {
         s.autoRoleId = role.id;
       });
+      audit.record(guild.id, interaction.user.id, 'welcome.autorole', 'enabled');
       return interaction.reply({ embeds: [embeds.success(interaction, 'Auto-Role Enabled', `Every new member will get ${role}.`)] });
     }
 
@@ -153,6 +158,7 @@ module.exports = {
       db.updateGuild('settings', guild.id, (s) => {
         delete s[what];
       });
+      audit.record(guild.id, interaction.user.id, 'welcome.off', what);
       return interaction.reply({ embeds: [embeds.success(interaction, 'Turned Off', `${what === 'welcome' ? 'Welcome' : 'Goodbye'} messages are now off.`)] });
     }
 
