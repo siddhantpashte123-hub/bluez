@@ -19,7 +19,7 @@
  * Storage (data/shop.json):
  *   { "<guildId>": { upiId, payeeName, counter, sold, products: { "<id>": { name, price, stock, description } } } }
  */
-const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
 const tickets = require('./ticket');
@@ -27,6 +27,7 @@ const logs = require('./logs');
 const { buildQrPayloads, rupees } = require('./upiqr');
 const { buildLtcPayload } = require('./ltc');
 const ltc = require('../utils/ltc');
+const cards = require('../utils/cards');
 
 /** An LTC payment may be up to 1% short (wallet fees / rounding) and still count. */
 const LTC_TOLERANCE = 0.99;
@@ -69,23 +70,27 @@ function buyRows(guildId) {
 }
 
 /* ---------------- Button: buy ---------------- */
-async function handleBuy(interaction, productId) {
+async function handleBuy(interaction, productId, couponCode = null) {
   const { guild, user } = interaction;
   const shop = shopOf(guild.id);
   const product = shop.products?.[productId];
   if (!product) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Product Not Found', 'This product is no longer sold.')));
   if (product.stock === 0) return interaction.reply(embeds.ephemeral(embeds.warn(interaction, 'Out of Stock', `**${product.name}** is sold out right now.`)));
   if (!shop.upiId && !shop.ltcAddress) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Shop Is Not Set Up', 'An admin has to run `/shop setup` or `/shop ltc` first.')));
+  const code = couponCode?.trim().toUpperCase() || null;
+  const coupon = code ? shop.coupons?.[code] : null;
+  if (code && (!coupon || coupon.expiresAt <= Date.now())) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Invalid Coupon', 'This coupon does not exist or has expired. Press Buy again to retry.')));
+  const price = coupon ? Math.max(1, Math.round(product.price * (100 - coupon.percent)) / 100) : product.price;
 
   const channel = await tickets.openTicket(interaction, {
     prize: product.name,
     hostId: null,
     prefix: 'order',
-    topic: `Order: ${product.name} (${rupees(product.price)})`,
+    topic: `Order: ${product.name} (${rupees(price)})`,
     title: '🛒 New Order',
     description:
       `Thanks for your order, ${user}! ${embeds.e('bow')}\n` +
-      `**Product:** ${product.name}\n**Price:** ${rupees(product.price)}\n\n` +
+      `**Product:** ${product.name}\n**Price:** ${rupees(price)}${coupon ? ` (${coupon.percent}% coupon: ${code})` : ''}\n\n` +
       (shop.upiId ? 'Pay with the UPI QR code below, then send a **screenshot of the payment** here. Staff will confirm it and deliver your product.' : 'Press **Pay with LTC** below to get the Litecoin payment details.') +
       (shop.upiId && shop.ltcAddress ? '\nYou can also pay with **Litecoin (LTC)** using the button below.' : ''),
     ownerLabel: '🛒 Buyer',
@@ -93,18 +98,31 @@ async function handleBuy(interaction, productId) {
   });
   if (!channel) return undefined;
 
+  const ticket = tickets.configOf(guild.id)?.tickets?.[channel.id];
+  if (ticket) {
+    db.updateGuild('orders', guild.id, (store) => {
+      (store.items ??= {})[channel.id] = { userId: user.id, number: ticket.number, productId, product: product.name, price, coupon: code, status: 'pending', createdAt: Date.now() };
+    });
+    let png = null;
+    if (cards.available()) png = await cards.orderCard({ number: ticket.number, product: product.name, price: rupees(price), status: 'PENDING', buyer: user.username }).catch((err) => (console.error('[Shop] receipt:', err.message), null));
+    const receipt = embeds.info(interaction, '🧾 Order Receipt', `Order **#${ticket.number}** • **${product.name}** • ${rupees(price)}\nStatus: **Pending payment**\nUse \`/shop orders\` to see your orders.`);
+    if (png) receipt.setImage('attachment://receipt.png');
+    const payload = { embeds: [receipt], ...(png ? { files: [new AttachmentBuilder(png, { name: 'receipt.png' })] } : {}), allowedMentions: { parse: [] } };
+    await channel.send(payload).catch(() => channel.send({ embeds: [embeds.info(interaction, '🧾 Order Receipt', `Order **#${ticket.number}** • **${product.name}** • ${rupees(price)}\nStatus: **Pending payment**`)] }).catch(() => {}));
+  }
+
   if (shop.upiId) {
     try {
-      for (const payload of await buildQrPayloads(interaction, shop.upiId, product.price, shop.payeeName)) await channel.send(payload);
+      for (const payload of await buildQrPayloads(interaction, shop.upiId, price, shop.payeeName)) await channel.send(payload);
     } catch (err) {
       console.error('[Shop] QR failed:', err.message);
-      await channel.send({ embeds: [embeds.error(interaction, 'QR Generation Failed', `Please pay **${rupees(product.price)}** to \`${shop.upiId}\` manually.`)] }).catch(() => {});
+      await channel.send({ embeds: [embeds.error(interaction, 'QR Generation Failed', `Please pay **${rupees(price)}** to \`${shop.upiId}\` manually.`)] }).catch(() => {});
     }
   }
   if (shop.ltcAddress) {
     await channel
       .send({
-        embeds: [embeds.info(interaction, '🪙 Pay with Litecoin', `Press the button to get the LTC address, QR code and the exact amount for **${rupees(product.price)}** at the live rate.\nLTC payments are checked on the blockchain automatically.`)],
+        embeds: [embeds.info(interaction, '🪙 Pay with Litecoin', `Press the button to get the LTC address, QR code and the exact amount for **${rupees(price)}** at the live rate.\nLTC payments are checked on the blockchain automatically.`)],
         components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`shop_ltc_${productId}`).setLabel('Pay with LTC').setEmoji('🪙').setStyle(ButtonStyle.Primary))],
       })
       .catch(() => {});
@@ -128,20 +146,23 @@ async function handleLtcQuote(interaction, productId) {
   const { guild, channel } = interaction;
   const shop = shopOf(guild.id);
   const product = shop.products?.[productId];
+  const trackedOrder = db.guild('orders', guild.id).items?.[channel.id];
   if (!orderOf(interaction)) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Not an Order', 'This channel is not an open order ticket.')));
   if (orderOf(interaction).paid) return interaction.reply(embeds.ephemeral(embeds.warn(interaction, 'Already Paid', 'This order is already paid.')));
-  if (!product || !shop.ltcAddress) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'LTC Not Available', 'This product or the Litecoin address is no longer set up.')));
+  if ((!product && !trackedOrder) || !shop.ltcAddress || (trackedOrder && trackedOrder.productId !== productId)) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'LTC Not Available', 'This product or the Litecoin address is no longer set up.')));
 
+  const address = shop.ltcAddress;
   await interaction.deferReply();
   let quote;
   try {
-    quote = await buildLtcPayload(interaction, shop.ltcAddress, product.price, 'INR');
+    quote = await buildLtcPayload(interaction, address, trackedOrder?.price ?? product.price, 'INR');
   } catch (err) {
     console.error('[Shop] LTC quote failed:', err.message);
     return interaction.editReply({ embeds: [embeds.error(interaction, 'LTC Price Not Available', 'I could not load the live LTC price. Please try again in a moment.')] });
   }
+  if (!orderOf(interaction) || orderOf(interaction).paid) return interaction.editReply({ embeds: [embeds.warn(interaction, 'Order Changed', 'The order is closed or already paid.')] });
   db.update('tickets', (data) => {
-    data[guild.id].tickets[channel.id].ltc = { amount: quote.ltcAmount, address: shop.ltcAddress, productId, at: Date.now() };
+    data[guild.id].tickets[channel.id].ltc = { amount: quote.ltcAmount, address, productId, at: Date.now() };
   });
   return interaction.editReply({
     ...quote.payload,
@@ -170,6 +191,10 @@ async function handleLtcVerifyButton(interaction, productId) {
 
 /** Modal: check the transaction on the blockchain and complete the order when it fits. */
 async function handleModal(interaction) {
+  if (interaction.customId.startsWith('shop_couponbuy_')) {
+    const productId = interaction.customId.slice('shop_couponbuy_'.length);
+    return handleBuy(interaction, productId, interaction.fields.getTextInputValue('coupon'));
+  }
   const { guild, channel } = interaction;
   const order = orderOf(interaction);
   const quote = order?.ltc;
@@ -206,6 +231,8 @@ async function handleModal(interaction) {
     return reply(embeds.warn(interaction, 'Payment Seen — Waiting for Confirmation', `I can see **${ltc.formatLtc(received)} LTC** on the way. ⏳\nIt needs **1 confirmation** (usually 2-5 minutes). Press **Verify** again after that.`));
   }
 
+  // Recheck after the network lookup: another verifier may have finished meanwhile.
+  if (!orderOf(interaction) || orderOf(interaction).paid || orderOf(interaction).ltc !== quote || (shopOf(guild.id).usedTx ?? []).includes(txid)) return reply(embeds.warn(interaction, 'Already Processed', 'This order or transaction was already processed.'));
   // Confirmed, right address, right amount, never used before -> the order is paid.
   const product = markPaid(guild.id, channel.id, quote.productId, txid);
   const name = product?.name ?? order.prize ?? 'the product';
@@ -244,6 +271,10 @@ function markPaid(guildId, channelId, productId, txid = null) {
     const order = data[guildId]?.tickets?.[channelId];
     if (order) order.paid = true;
   });
+  db.updateGuild('orders', guildId, (store) => {
+    const order = store.items?.[channelId];
+    if (order) { order.status = 'paid'; order.paidAt = Date.now(); }
+  });
   return product;
 }
 
@@ -261,6 +292,7 @@ async function handlePaid(interaction, productId) {
 
   const product = markPaid(guild.id, channel.id, productId);
   const name = product?.name ?? order.prize ?? 'the product';
+  const paidPrice = db.guild('orders', guild.id).items?.[channel.id]?.price ?? product?.price;
 
   await interaction.update({
     embeds: [embeds.success(interaction, 'Payment Confirmed', `${interaction.user} confirmed the payment for **${name}**.\n<@${order.userId}>, your product will be delivered here. Leave a review with \`/vouch\` afterwards! ${embeds.e('bow')}`)],
@@ -275,7 +307,7 @@ async function handlePaid(interaction, productId) {
           { name: '🛒 Product', value: name, inline: true },
           { name: '👤 Buyer', value: `<@${order.userId}>`, inline: true },
           { name: '🧾 Confirmed by', value: `${interaction.user}`, inline: true },
-          ...(product ? [{ name: '💵 Price', value: rupees(product.price), inline: true }, { name: '📦 Stock', value: stockText(product.stock), inline: true }] : []),
+          ...(product ? [{ name: '💵 Price', value: rupees(paidPrice), inline: true }, { name: '📦 Stock', value: stockText(product.stock), inline: true }] : []),
         ],
       }),
     ],
@@ -286,7 +318,9 @@ async function handlePaid(interaction, productId) {
 async function handleButton(interaction) {
   const [, action, ...rest] = interaction.customId.split('_');
   const productId = rest.join('_');
-  if (action === 'buy') return handleBuy(interaction, productId);
+  if (action === 'buy') return interaction.showModal(new ModalBuilder().setCustomId(`shop_couponbuy_${productId}`).setTitle('Complete Your Order').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('coupon').setLabel('Coupon code (optional)').setPlaceholder('Leave blank if you have no coupon').setStyle(TextInputStyle.Short).setMaxLength(32).setRequired(false)),
+  ));
   if (action === 'paid') return handlePaid(interaction, productId);
   if (action === 'ltc') return handleLtcQuote(interaction, productId);
   if (action === 'ltcverify') return handleLtcVerifyButton(interaction, productId);
@@ -326,6 +360,14 @@ module.exports = {
         .addIntegerOption((o) => o.setName('amount').setDescription('New stock (-1 = unlimited)').setRequired(true).setMinValue(-1).setMaxValue(100000)),
     )
     .addSubcommand((s) => s.setName('products').setDescription('🛍️ Show all products with price and stock.'))
+    .addSubcommand((s) => s.setName('coupon').setDescription('🎟️ Create or replace a percentage coupon (admins).')
+      .addStringOption((o) => o.setName('code').setDescription('Letters, numbers, dash or underscore').setRequired(true).setMinLength(2).setMaxLength(32))
+      .addIntegerOption((o) => o.setName('percent').setDescription('Discount percentage').setRequired(true).setMinValue(1).setMaxValue(90))
+      .addIntegerOption((o) => o.setName('days').setDescription('Expires after this many days').setRequired(true).setMinValue(1).setMaxValue(365)))
+    .addSubcommand((s) => s.setName('uncoupon').setDescription('🎟️ Remove a coupon (admins).')
+      .addStringOption((o) => o.setName('code').setDescription('Coupon code').setRequired(true).setMinLength(2).setMaxLength(32)))
+    .addSubcommand((s) => s.setName('orders').setDescription('🧾 View your recent shop orders privately.'))
+    .addSubcommand((s) => s.setName('delivered').setDescription('📦 Mark the paid order in this ticket as delivered (staff).'))
     .addSubcommand((s) =>
       s.setName('panel').setDescription('📌 Post the shop with Buy buttons (admins).')
         .addChannelOption((o) => o.setName('channel').setDescription('Where to post (default: this channel)').addChannelTypes(ChannelType.GuildText)),
@@ -337,8 +379,37 @@ module.exports = {
     const fail = (title, text) => interaction.reply(embeds.ephemeral(embeds.error(interaction, title, text)));
 
     if (sub === 'products') return interaction.reply({ embeds: [productsEmbed(interaction, guild)] });
+    if (sub === 'orders') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use the Slash Command', 'For privacy, use `/shop orders`.')] });
+      const items = Object.entries(db.guild('orders', guild.id).items ?? {}).filter(([, order]) => order.userId === interaction.user.id).sort((a, b) => b[1].createdAt - a[1].createdAt).slice(0, 10);
+      const text = items.map(([id, order]) => `**#${order.number}** • ${order.product} • ${rupees(order.price)}\nStatus: **${order.status}** • <t:${Math.floor(order.createdAt / 1000)}:R> • <#${id}>`).join('\n\n') || 'No orders yet.';
+      return interaction.reply({ ...embeds.ephemeral(embeds.make(interaction, { title: '🧾 Your Orders', color: embeds.COLORS.cyan, description: text })), allowedMentions: { parse: [] } });
+    }
+    if (sub === 'delivered') {
+      const config = tickets.configOf(guild.id);
+      const order = db.guild('orders', guild.id).items?.[interaction.channelId];
+      if (!order) return fail('Not an Order', 'Use this inside a tracked order ticket.');
+      if (!tickets.isStaff(interaction.member, config) || order.userId === interaction.user.id) return fail('Staff Only', 'Only the support team can mark this order delivered.');
+      if (order.status !== 'paid') return fail('Cannot Mark Delivered', order.status === 'delivered' ? 'This order is already marked delivered.' : 'The order must be marked paid first.');
+      db.updateGuild('orders', guild.id, (store) => { store.items[interaction.channelId].status = 'delivered'; store.items[interaction.channelId].deliveredAt = Date.now(); });
+      return interaction.reply({ embeds: [embeds.success(interaction, 'Order Delivered', `Order **#${order.number}** marked delivered. The buyer can review using \`/vouch give\`.`)], allowedMentions: { parse: [] } });
+    }
 
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return fail('Missing Permission', 'You need the **Manage Server** permission for this.');
+
+    if (sub === 'coupon' || sub === 'uncoupon') {
+      const code = interaction.options.getString('code', true).trim().toUpperCase();
+      if (!/^[A-Z0-9_-]{2,32}$/.test(code)) return fail('Invalid Code', 'Use 2–32 letters, numbers, underscores or dashes.');
+      if (sub === 'uncoupon') {
+        if (!shopOf(guild.id).coupons?.[code]) return fail('Coupon Not Found', 'No coupon with that code exists.');
+        db.updateGuild('shop', guild.id, (shop) => { delete shop.coupons[code]; });
+        return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Coupon Removed', `Coupon \`${code}\` is no longer valid.`)));
+      }
+      const percent = interaction.options.getInteger('percent', true), days = interaction.options.getInteger('days', true);
+      const expiresAt = Date.now() + days * 86400000;
+      db.updateGuild('shop', guild.id, (shop) => { (shop.coupons ??= {})[code] = { percent, expiresAt }; });
+      return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Coupon Saved', `\`${code}\`: **${percent}% off**, expires <t:${Math.floor(expiresAt / 1000)}:R>. Reusable until removed or expired; minimum order ₹1.`)));
+    }
 
     if (sub === 'setup') {
       const upiId = interaction.options.getString('upi_id', true).trim();

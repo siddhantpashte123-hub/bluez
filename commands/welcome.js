@@ -13,9 +13,10 @@
  * Storage (data/settings.json):
  *   { "<guildId>": { welcome: { channelId, message }, goodbye: { channelId, message }, autoRoleId } }
  */
-const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ChannelType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const cards = require('../utils/cards');
 
 const DEFAULT_WELCOME = 'Welcome {user} to **{server}**! You are member **#{count}**.';
 const DEFAULT_GOODBYE = '**{username}** left the server. We are now **{count}** members.';
@@ -53,6 +54,20 @@ function welcomePayload(member, config, inviterId = null) {
   };
 }
 
+/** Add a banner without losing the welcome text if rendering fails. */
+async function welcomeWithCard(member, config, inviterId = null) {
+  const payload = welcomePayload(member, config, inviterId);
+  if (!cards.available()) return payload;
+  const png = await cards.welcomeCard({ username: member.displayName ?? member.user.username,
+    avatarUrl: member.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
+    server: member.guild.name, count: member.guild.memberCount }).catch((err) => (console.error('[Welcome] card:', err.message), null));
+  if (png) {
+    payload.embeds[0].setImage('attachment://welcome.png');
+    payload.files = [new AttachmentBuilder(png, { name: 'welcome.png' })];
+  }
+  return payload;
+}
+
 /** Build the goodbye message payload. */
 function goodbyePayload(member, config) {
   return {
@@ -73,6 +88,7 @@ const messageOpt = (o) => o.setName('message').setDescription('Custom text. Plac
 
 module.exports = {
   welcomePayload,
+  welcomeWithCard,
   goodbyePayload,
 
   data: new SlashCommandBuilder()
@@ -143,6 +159,9 @@ module.exports = {
     // test
     const config = db.guild('settings', guild.id).welcome;
     if (!config) return interaction.reply(embeds.ephemeral(embeds.warn(interaction, 'Not Set Up', 'Run `/welcome set` first.')));
-    return interaction.reply({ ...welcomePayload(interaction.member, config, interaction.user.id), flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    const payload = await welcomeWithCard(interaction.member, config);
+    try { return await interaction.editReply(payload); }
+    catch (err) { if (!payload.files) throw err; return interaction.editReply(welcomePayload(interaction.member, config)); }
   },
 };

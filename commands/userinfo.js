@@ -2,8 +2,10 @@
  * /userinfo [user]
  * Shows profile details of a member (or of yourself).
  */
-const { SlashCommandBuilder, InteractionContextType } = require('discord.js');
+const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder, PermissionFlagsBits } = require('discord.js');
 const embeds = require('../utils/embeds');
+const cards = require('../utils/cards');
+const db = require('../utils/db');
 
 /** Discord timestamp: "12 March 2024 (2 years ago)" */
 const when = (ms) => (ms ? `<t:${Math.floor(ms / 1000)}:D>\n<t:${Math.floor(ms / 1000)}:R>` : 'Unknown');
@@ -39,7 +41,16 @@ module.exports = {
       member?.isCommunicationDisabled?.() && '🔇 Timed Out',
     ].filter(Boolean);
 
-    await interaction.editReply({
+    let png = null;
+    if (cards.available() && interaction.appPermissions?.has(PermissionFlagsBits.AttachFiles) !== false) {
+      const entry = db.guild('levels', interaction.guild.id)[user.id];
+      png = await cards.profileCard({ username: member?.displayName ?? user.username,
+        avatarUrl: user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
+        joined: member?.joinedTimestamp ? new Date(member.joinedTimestamp).toISOString().slice(0, 10) : null,
+        roleCount: roles.length, level: entry?.level ?? 0 }).catch((err) => (console.error('[Profile] card:', err.message), null));
+    }
+    const payload = {
+      ...(png ? { files: [new AttachmentBuilder(png, { name: 'profile.png' })] } : {}),
       embeds: [
         embeds.make(interaction, {
           color: member?.displayColor || embeds.COLORS.blurple,
@@ -55,8 +66,15 @@ module.exports = {
             { name: `🎭 Roles (${roles.length})`, value: roleText.slice(0, 1024) },
           ],
           thumbnail: (member ?? user).displayAvatarURL({ size: 512 }),
+          ...(png ? { image: 'attachment://profile.png' } : {}),
         }),
       ],
-    });
+    };
+    try { await interaction.editReply(payload); }
+    catch (err) {
+      if (!png) throw err;
+      payload.embeds[0].setImage(null);
+      await interaction.editReply({ embeds: payload.embeds, files: [] });
+    }
   },
 };
