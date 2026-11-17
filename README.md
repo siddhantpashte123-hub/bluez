@@ -4,6 +4,21 @@ A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash and `!
 
 > **No Docker.** The bot runs natively (`node index.js` / `npm start`) and is kept online 24/7 by **PM2**.
 
+<a id="fresh-vps-install"></a>
+## 🚀 Fresh VPS: all-in-one install
+
+For a **new Ubuntu/Debian VPS**, run this single command in a terminal. It installs Git if needed, clones the latest `main` branch into `~/bluez`, and runs the interactive setup script:
+
+```bash
+cd ~ && (command -v git >/dev/null || { if [ "$(id -u)" -eq 0 ]; then apt-get update && apt-get install -y git ca-certificates; else sudo apt-get update && sudo apt-get install -y git ca-certificates; fi; }) && git clone --branch main https://github.com/siddhantpashte123-hub/bluez.git bluez && cd bluez && bash setup.sh
+```
+
+- This is for a **fresh install**: `~/bluez` must not already exist. For an existing installation, use the [update command](#updating-the-bot) instead.
+- Requires internet access and, if Git needs installing, root or working `sudo` access. Setup installs Node.js, dependencies and PM2 if needed.
+- When prompted, enter your bot token **only in your VPS terminal**; never post it in chat. Create the bot, enable the two privileged intents and invite it as explained below.
+- A fresh VPS does **not** contain your old bot data. If migrating, securely back up and transfer the old `data/` folder separately.
+- On systems without systemd, automatic startup may not be available; after a restart, use `pm2 resurrect`.
+
 ---
 
 ## ✨ Features
@@ -74,6 +89,8 @@ Double-click **`setup.bat`**.
 
 ### 🐧 Linux VPS (Ubuntu / Debian)
 
+For a fresh machine, use the [all-in-one install command](#fresh-vps-install) above. If you already copied the project folder, run:
+
 ```bash
 chmod +x setup.sh
 ./setup.sh
@@ -84,7 +101,7 @@ Both scripts do the same thing, automatically:
 1. Check for **Node.js v20+** and silently install Node.js LTS if it is missing (Linux: package repository first, official nodejs.org binary as automatic fallback).
 2. Run `npm install`.
 3. Ask: `Paste your Discord Bot Token:` and save it to `.env` as `DISCORD_TOKEN=...`.
-4. Install **PM2**, start the bot as `DiscordBot`, run `pm2 save`, and register auto-start on reboot.
+4. Install **PM2**, start the bot as `DiscordBot`, run `pm2 save`, and attempt to register auto-start on reboot when systemd is available.
 5. Print `✅ Bot is now running 24/7. Token saved. Done.`
 
 That is it. Type `/help` in your server.
@@ -106,17 +123,13 @@ pm2 delete DiscordBot      # remove from PM2
 
 ### Updating the bot
 
+For an existing Git installation at `~/bluez`, update to the latest merged `main` version and restart PM2:
+
 ```bash
-# 1. Replace the code (git pull, or copy the new files over the old ones).
-#    Keep your .env file and your data/ folder!
-git pull
-
-# 2. Install any new dependencies
-npm install
-
-# 3. Restart
-pm2 restart DiscordBot
+cd ~/bluez && git checkout main && git pull --ff-only origin main && npm install && pm2 restart DiscordBot
 ```
+
+Keep your `.env` file and `data/` folder. If Git reports conflicting local changes, review them before updating; do not delete them just to make the command run.
 
 ### Changing the token
 
