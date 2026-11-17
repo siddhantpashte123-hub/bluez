@@ -5,6 +5,7 @@
 const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder, PermissionFlagsBits } = require('discord.js');
 const embeds = require('../utils/embeds');
 const cards = require('../utils/cards');
+const branding = require('../utils/branding');
 const db = require('../utils/db');
 
 /** Discord timestamp: "12 March 2024 (2 years ago)" */
@@ -47,7 +48,7 @@ module.exports = {
       png = await cards.profileCard({ username: member?.displayName ?? user.username,
         avatarUrl: user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }),
         joined: member?.joinedTimestamp ? new Date(member.joinedTimestamp).toISOString().slice(0, 10) : null,
-        roleCount: roles.length, level: entry?.level ?? 0 }).catch((err) => (console.error('[Profile] card:', err.message), null));
+        roleCount: roles.length, level: entry?.level ?? 0, accent: branding.accent(interaction.guild.id) }).catch((err) => (console.error('[Profile] card:', err.message), null));
     }
     const payload = {
       ...(png ? { files: [new AttachmentBuilder(png, { name: 'profile.png' })] } : {}),

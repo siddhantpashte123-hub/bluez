@@ -326,7 +326,23 @@ The bot uses five custom emojis (tick, caution, two gifts, bow). Their IDs are l
 - New orders get a receipt card and appear in private `/shop orders` history. In a paid order ticket, staff can run `/shop delivered` after actual delivery. Old orders are not backfilled; closing an unpaid order marks it cancelled; closing a paid order does not automatically mark it delivered.
 - Owners may rate closed tickets via DM buttons if their DMs are open; `/ticket dashboard` shows closed-ticket claims and aggregate ratings for staff. Only tickets closed after the update are counted.
 - Existing `/vouch give`, `/vouch stats` and `/antiraid set` provide reviews and raid protection.
-- `/backup export` gives administrators a private JSON snapshot of server roles, channels, overwrites and selected settings. It is a reference export, **not automatic restore**; messages, members, secrets and bot data are not included. Store it securely. To back up bot state, separately back up the VPS `data/` directory securely.
+- `/backup export` gives administrators a private JSON snapshot of server roles, channels, overwrites and selected settings. Messages, members, secrets and bot data are not included. `/backup restore` can create a limited, private roles/channels skeleton after preview; see the safety limits below. Store it securely. To back up bot state, separately back up the VPS `data/` directory securely.
 - For privacy, `/shop orders`, `/ticket dashboard` and `/backup export` are slash-only; prefix messages cannot be ephemeral. Other supported commands keep the `!` prefix.
 
 Run mock/unit tests with `node --test tests/premium.test.js`. Live Discord permissions, image attachments and payment flows still require testing in a private test server.
+
+
+## Premium command centre and operations
+
+- `/help` has a redesigned compact home and category selector. `/info server` and level-up announcements now include image cards where canvas and attachment permissions are available.
+- `/branding set color:#5865F2 name:Bluez footer:Bluez` updates the help name, common embed accent/footer, and image-card background accents; `/branding reset` restores defaults. Latency-quality colors remain status-based.
+- `/ticket category kind:support support_role:@Role category:#Category question:"How can we help?"` configures a type; use `question:off` to remove the question or `reset:true` to clear overrides. `/ticket setup kind:support` can post a panel for just that type. Existing open tickets keep their role access. The shared default support role is managed with `/ticket setup`.
+- `/ticket inactivity hours:24` enables reminders after no human ticket activity; `0` disables them. Messages reset the timer. The bot sends at most one reminder per inactive period. Requires Message Content/Server Members intents as configured in setup.
+- `/ticket priority level:urgent` sets priority in an open ticket. `/ticket note text:...` creates a private note for a tracked order; `/shop notes number:1` lets staff view it, including after the ticket closes. Use slash commands, never prefix for private notes. The buyer cannot access notes even if they are staff.
+- `/staff status state:available` (or busy/off) and `/staff list` track support availability. Staff-only and slash-only; this does not automatically assign tickets.
+- `/shop category product:... name:Hosting` assigns a category. `/shop panel category:Hosting` posts a filtered panel. `/shop dashboard` and `/shop couponstats` privately summarize tracked paid/delivered orders; older coupon orders without an original price have unknown discount values. Revenue is recorded INR order value, not a reconciled accounting total.
+- `/audit` shows selected bot configuration actions (branding, ticket setup/category/inactivity/priority, shop product/coupon/payment setup, welcome and anti-raid, and restores). It does not capture all commands or Discord's audit log, and does not store note contents or payment details.
+- `/backup restore snapshot:<JSON>` offers an administrator-only preview and confirmation. It **never deletes or edits existing resources**. It creates at most 25 new unmanaged roles with zero permissions and 50 new text/voice/category channels hidden from non-administrators. Unsupported types and managed roles are skipped. Saved permissions, overwrites, settings, users, messages and role assignments are **not restored**; configure access manually. Running it twice creates duplicates. Test on a separate server first.
+- Sensitive views, notes, availability and backups require slash commands because ordinary prefix replies cannot be ephemeral. The bot still supports `!` for other commands.
+
+Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and restore flows require testing in a dedicated test server.

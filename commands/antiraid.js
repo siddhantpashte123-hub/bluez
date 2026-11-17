@@ -13,6 +13,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const audit = require('../utils/audit');
 
 const WINDOW_MS = 10_000;
 const RAID_MODE_MS = 2 * 60 * 1000;
@@ -82,6 +83,7 @@ module.exports = {
           joinLimit: interaction.options.getInteger('join_limit') ?? old.joinLimit ?? 8,
         };
       });
+      audit.record(guild.id, interaction.user.id, 'antiraid.set', enabled ? 'enabled' : 'disabled');
     }
     const config = db.guild('settings', guild.id).antiraid ?? { enabled: false, minAgeDays: 0, joinLimit: 8 };
     return interaction.reply({

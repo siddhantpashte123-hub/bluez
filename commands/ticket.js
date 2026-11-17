@@ -37,9 +37,13 @@ const {
   SeparatorBuilder,
   SeparatorSpacingSize,
   FileBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
+const audit = require('../utils/audit');
 const logs = require('./logs');
 const { buildTranscript } = require('../utils/transcript');
 
@@ -81,7 +85,8 @@ function slug(text) {
 function isStaff(member, config, ticket = null) {
   if (member.permissions?.has(PermissionFlagsBits.ManageChannels)) return true;
   if (ticket?.hostId && member.id === ticket.hostId) return true; // giveaway host of a prize ticket
-  return Boolean(config?.supportRoleId && member.roles?.cache?.has(config.supportRoleId));
+  const supportRoleId = ticket?.supportRoleId ?? config?.supportRoleId;
+  return Boolean(supportRoleId && member.roles?.cache?.has(supportRoleId));
 }
 
 /** Buttons shown inside a ticket channel. */
@@ -130,12 +135,12 @@ async function askToClose(interaction) {
  */
 /** Ticket types offered on the panel: button ID -> { label, emoji, prefix }. */
 const KINDS = {
-  ticket_open: { label: 'Support', emoji: '🛟', prefix: 'ticket', style: ButtonStyle.Primary },
-  ticket_open_buy: { label: 'Buy', emoji: '🛒', prefix: 'buy', style: ButtonStyle.Success },
-  ticket_open_report: { label: 'Report', emoji: '🚨', prefix: 'report', style: ButtonStyle.Danger },
+  ticket_open: { key: 'support', label: 'Support', emoji: '🛟', prefix: 'ticket', style: ButtonStyle.Primary },
+  ticket_open_buy: { key: 'buy', label: 'Buy', emoji: '🛒', prefix: 'buy', style: ButtonStyle.Success },
+  ticket_open_report: { key: 'report', label: 'Report', emoji: '🚨', prefix: 'report', style: ButtonStyle.Danger },
 };
 
-async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
+async function openTicket(interaction, prize = null, kind = KINDS.ticket_open, answer = null) {
   const { guild, user } = interaction;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -172,13 +177,16 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
     return null;
   }
 
-  // Use the configured category if it still exists and has room.
+  // Category-specific settings override the default; prize/order tickets keep the default.
+  const kindConfig = prize ? null : config.kinds?.[kind.key];
+  const categoryId = kindConfig?.categoryId ?? config.categoryId;
   let parent = null;
-  if (config.categoryId) {
-    const category = await guild.channels.fetch(config.categoryId).catch(() => null);
+  if (categoryId) {
+    const category = await guild.channels.fetch(categoryId).catch(() => null);
     if (category?.type === ChannelType.GuildCategory && category.children.cache.size < MAX_CHANNELS_PER_CATEGORY) parent = category.id;
   }
-  const supportRole = config.supportRoleId ? await guild.roles.fetch(config.supportRoleId).catch(() => null) : null;
+  const roleId = kindConfig?.supportRoleId ?? config.supportRoleId;
+  const supportRole = roleId ? await guild.roles.fetch(roleId).catch(() => null) : null;
 
   const number = (config.counter ?? 0) + 1;
   const overwrites = [
@@ -220,7 +228,7 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
   db.update('tickets', (data) => {
     const g = (data[guild.id] ??= { counter: 0, tickets: {} });
     g.counter = number;
-    (g.tickets ??= {})[channel.id] = { userId: user.id, number, openedAt: Date.now(), ...(prize ? { prize: prize.prize, hostId: host?.id ?? null } : {}) };
+    (g.tickets ??= {})[channel.id] = { userId: user.id, number, openedAt: Date.now(), lastActivityAt: Date.now(), supportRoleId: supportRole?.id ?? null, ...(prize ? { prize: prize.prize, hostId: host?.id ?? null } : {}) };
   });
 
   // Welcome message inside the ticket (pings the opener and the support role once).
@@ -233,7 +241,7 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open) {
           title: prize ? prize.title ?? `${embeds.e('giftLegend')} Prize Claim` : `${embeds.e('gift')} ${kind.label} Ticket #${number}`,
           description: prize
             ? prize.description ?? `Congratulations ${user}! ${embeds.e('bow')}\nYou won **${prize.prize}**. The host will hand over your prize here.`
-            : `Welcome ${user}! ${embeds.e('bow')}\n` + 'Please describe what you need and the support team will be with you shortly.',
+            : `Welcome ${user}! ${embeds.e('bow')}\n` + 'Please describe what you need and the support team will be with you shortly.' + (answer ? `\n\n**Initial response:**\n${answer.slice(0, 1000)}` : ''),
           fields: [
             { name: prize ? prize.ownerLabel ?? '🏆 Winner' : '👤 Opened by', value: `${user}`, inline: true },
             prize
@@ -400,6 +408,13 @@ async function claimTicket(interaction) {
 }
 
 /** Router for every "ticket_*" button (called from events/interactionCreate.js). */
+async function handleModal(interaction) {
+  const id = interaction.customId.slice('ticket_question_'.length);
+  const kind = KINDS[id];
+  if (!interaction.customId.startsWith('ticket_question_') || !kind) return;
+  return openTicket(interaction, null, kind, interaction.fields.getTextInputValue('answer'));
+}
+
 async function handleButton(interaction) {
   if (interaction.customId.startsWith('ticket_rating_')) {
     const match = /^ticket_rating_(\d{16,20})_(\d{16,20})_([1-5])$/.exec(interaction.customId);
@@ -412,8 +427,12 @@ async function handleButton(interaction) {
   switch (interaction.customId) {
     case 'ticket_open':
     case 'ticket_open_buy':
-    case 'ticket_open_report':
-      return openTicket(interaction, null, KINDS[interaction.customId]);
+    case 'ticket_open_report': {
+      const kind = KINDS[interaction.customId];
+      const question = configOf(interaction.guildId)?.kinds?.[kind.key]?.question;
+      if (question) return interaction.showModal(new ModalBuilder().setCustomId(`ticket_question_${interaction.customId}`).setTitle(`${kind.label} ticket`).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('answer').setLabel(question).setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1000))));
+      return openTicket(interaction, null, kind);
+    }
     case 'ticket_claim':
       return claimTicket(interaction);
     case 'ticket_close':
@@ -436,6 +455,7 @@ async function handleButton(interaction) {
 
 module.exports = {
   handleButton,
+  handleModal,
   openTicket,
   isStaff,
   configOf,
@@ -456,10 +476,20 @@ module.exports = {
         )
         .addRoleOption((o) => o.setName('support_role').setDescription('Role that can see and answer every ticket'))
         .addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(200))
-        .addStringOption((o) => o.setName('description').setDescription('Panel text').setMaxLength(1500)),
+        .addStringOption((o) => o.setName('description').setDescription('Panel text').setMaxLength(1500))
+        .addStringOption((o) => o.setName('kind').setDescription('Post one type only (optional)').addChoices({name:'Support',value:'support'},{name:'Buy',value:'buy'},{name:'Report',value:'report'})),
     )
     .addSubcommand((sub) => sub.setName('close').setDescription('🔒 Close the ticket you are in.'))
     .addSubcommand((sub) => sub.setName('dashboard').setDescription('📊 Ticket claims and feedback (staff).'))
+    .addSubcommand((sub) => sub.setName('priority').setDescription('Set ticket priority (staff).').addStringOption((o) => o.setName('level').setDescription('Priority').setRequired(true).addChoices({name:'Low', value:'low'}, {name:'Normal',value:'normal'}, {name:'Urgent',value:'urgent'})))
+    .addSubcommand((sub) => sub.setName('note').setDescription('Add a private staff note to this order.').addStringOption((o) => o.setName('text').setDescription('Private note').setRequired(true).setMaxLength(500)))
+    .addSubcommand((sub) => sub.setName('inactivity').setDescription('Set inactivity reminders (admin).').addIntegerOption((o) => o.setName('hours').setDescription('Hours inactive; 0 disables reminders').setRequired(true).setMinValue(0).setMaxValue(720)))
+    .addSubcommand((sub) => sub.setName('category').setDescription('Configure one panel type (admin).')
+      .addStringOption((o) => o.setName('kind').setDescription('Panel button').setRequired(true).addChoices({name:'Support',value:'support'},{name:'Buy',value:'buy'},{name:'Report',value:'report'}))
+      .addRoleOption((o) => o.setName('support_role').setDescription('Support role for this type'))
+      .addChannelOption((o) => o.setName('category').setDescription('Discord category').addChannelTypes(ChannelType.GuildCategory))
+      .addStringOption((o) => o.setName('question').setDescription('Question shown before opening; use off to remove').setMaxLength(45))
+      .addBooleanOption((o) => o.setName('reset').setDescription('Reset this type to default settings')))
     .addSubcommand((sub) =>
       sub
         .setName('add')
@@ -491,6 +521,49 @@ module.exports = {
       ] })), allowedMentions: { parse: [] } });
     }
 
+    if (sub === 'category' || sub === 'inactivity') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return interaction.reply(ephemeral(embeds.error(interaction, 'Missing Permission', 'Manage Server is required.')));
+      if (sub === 'inactivity') {
+        const hours = interaction.options.getInteger('hours', true);
+        if (!Number.isInteger(hours) || hours < 0 || hours > 720) return interaction.reply(ephemeral(embeds.error(interaction, 'Invalid Duration', 'Use 0–720 hours.')));
+        db.update('tickets', (data) => { const g = (data[guild.id] ??= { counter: 0, tickets: {} }); g.inactivityHours = hours; });
+        audit.record(guild.id, interaction.user.id, 'ticket.inactivity', `${hours} hours`);
+        return interaction.reply(ephemeral(embeds.success(interaction, 'Inactivity Updated', hours ? `Staff will be reminded after ${hours} hours without activity.` : 'Inactivity reminders disabled.')));
+      }
+      const kind = interaction.options.getString('kind', true);
+      if (!['support', 'buy', 'report'].includes(kind)) return interaction.reply(ephemeral(embeds.error(interaction, 'Invalid Type', 'Choose a panel type.')));
+      const role = interaction.options.getRole('support_role'), category = interaction.options.getChannel('category'), question = interaction.options.getString('question');
+      if (role?.id === guild.id) return interaction.reply(ephemeral(embeds.error(interaction, 'Invalid Support Role', '@everyone cannot be a ticket support role.')));
+      const reset = interaction.options.getBoolean('reset');
+      if (reset) {
+        db.update('tickets', (data) => { if (data[guild.id]?.kinds) delete data[guild.id].kinds[kind]; });
+        audit.record(guild.id, interaction.user.id, 'ticket.category.reset', kind);
+        return interaction.reply(ephemeral(embeds.success(interaction, 'Ticket Type Reset', `Default settings restored for **${kind}**.`)));
+      }
+      if (!role && !category && question === null) return interaction.reply(ephemeral(embeds.warn(interaction, 'No Changes', 'Provide a support role, category or question.')));
+      db.update('tickets', (data) => { const g = (data[guild.id] ??= { counter: 0, tickets: {} }); const k = ((g.kinds ??= {})[kind] ??= {}); if (role) k.supportRoleId = role.id; if (category) k.categoryId = category.id; if (question !== null) k.question = question.trim().toLowerCase() === 'off' ? null : question.trim(); });
+      audit.record(guild.id, interaction.user.id, 'ticket.category', kind);
+      return interaction.reply(ephemeral(embeds.success(interaction, 'Ticket Type Updated', `Settings saved for **${kind}** tickets. Existing tickets keep their original permissions.`)));
+    }
+    if (sub === 'priority' || sub === 'note') {
+      if (interaction.isPrefix && sub === 'note') return interaction.reply({ embeds: [embeds.warn(interaction, 'Use Slash Command', 'Private notes must use `/ticket note`. Delete your message if it contains sensitive text.')] });
+      const ticket = ticketOf(guild.id, interaction.channelId);
+      if (!ticket) return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'Use this inside a ticket.')));
+      if (!isStaff(interaction.member, configOf(guild.id), ticket) || ticket.userId === interaction.user.id) return interaction.reply(ephemeral(embeds.error(interaction, 'Staff Only', 'Only support staff may do this.')));
+      if (sub === 'priority') {
+        const priority = interaction.options.getString('level', true);
+        if (!['low', 'normal', 'urgent'].includes(priority)) return interaction.reply(ephemeral(embeds.error(interaction, 'Invalid Priority', 'Choose low, normal or urgent.')));
+        db.update('tickets', (data) => { data[guild.id].tickets[interaction.channelId].priority = priority; });
+        audit.record(guild.id, interaction.user.id, 'ticket.priority', `ticket #${ticket.number}: ${priority}`);
+        return interaction.reply({ embeds: [embeds.success(interaction, 'Priority Updated', `Priority is now **${priority}**.`)] });
+      }
+      if (!db.guild('orders', guild.id).items?.[interaction.channelId]) return interaction.reply(ephemeral(embeds.error(interaction, 'Not an Order', 'Private notes are available in tracked order tickets.')));
+      const note = interaction.options.getString('text', true).trim();
+      if (!note) return interaction.reply(ephemeral(embeds.error(interaction, 'Empty Note', 'Enter a note.')));
+      db.updateGuild('ordernotes', guild.id, (store) => { const list = ((store.items ??= {})[interaction.channelId] ??= []); list.push({ by: interaction.user.id, text: note.slice(0, 500), at: Date.now() }); if (list.length > 100) list.shift(); });
+      return interaction.reply(ephemeral(embeds.success(interaction, 'Private Note Saved', `Staff can view notes using \`/shop notes number:${ticket.number}\`.`)));
+    }
+
     /* ---------- /ticket setup ---------- */
     if (sub === 'setup') {
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
@@ -502,6 +575,8 @@ module.exports = {
       const category = interaction.options.getChannel('category');
       const role = interaction.options.getRole('support_role');
       const title = interaction.options.getString('title') ?? 'Support Tickets';
+      const panelKind = interaction.options.getString('kind');
+      if (role?.id === guild.id) return interaction.editReply({ embeds: [embeds.error(interaction, 'Invalid Support Role', '@everyone cannot be a ticket support role.')] });
       const text =
         interaction.options.getString('description') ??
         'Need help, want to buy something, or have a question?\nPress the button below to open a **private ticket** with the team.';
@@ -525,11 +600,12 @@ module.exports = {
       // Save the config (existing open tickets and the counter are kept).
       db.update('tickets', (data) => {
         const g = (data[guild.id] ??= { counter: 0, tickets: {} });
-        g.categoryId = category?.id ?? null;
-        g.supportRoleId = role?.id ?? null;
+        if (category) g.categoryId = category.id;
+        if (role) g.supportRoleId = role.id;
         g.tickets ??= {};
       });
 
+      audit.record(guild.id, interaction.user.id, 'ticket.setup', panelKind ?? 'all');
       await target.send({
         embeds: [
           embeds.make(interaction, {
@@ -541,7 +617,7 @@ module.exports = {
         ],
         components: [
           new ActionRowBuilder().addComponents(
-            Object.entries(KINDS).map(([id, k]) => new ButtonBuilder().setCustomId(id).setLabel(k.label).setEmoji(k.emoji).setStyle(k.style)),
+            Object.entries(KINDS).filter(([, k]) => !panelKind || k.key === panelKind).map(([id, k]) => new ButtonBuilder().setCustomId(id).setLabel(k.label).setEmoji(k.emoji).setStyle(k.style)),
           ),
         ],
       });

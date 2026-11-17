@@ -14,6 +14,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
 const cards = require('../utils/cards');
+const branding = require('../utils/branding');
 const db = require('../utils/db');
 
 const XP_COOLDOWN_MS = 60_000;
@@ -59,8 +60,9 @@ async function addXp(message) {
         await message.member?.roles.add(roleId, 'Level reward').catch((err) => console.error('[Levels] reward role:', err.message));
       }
     }
-    await message.channel
-      .send({
+    const color = db.guild('settings', message.guildId).branding?.color;
+    const png = await cards.levelUpCard({ username: message.member?.displayName ?? message.author.username, avatarUrl: message.author.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), level: leveledTo, server: message.guild.name, ...(color != null ? { accent: `#${color.toString(16).padStart(6, '0')}` } : {}) }).catch(() => null);
+    const fallback = {
         embeds: [
           embeds.make(message, {
             color: embeds.COLORS.gold,
@@ -70,8 +72,12 @@ async function addXp(message) {
           }),
         ],
         allowedMentions: { parse: [] },
-      })
-      .catch(() => {});
+      };
+    if (png) {
+      const embed = embeds.make(message, { color: embeds.COLORS.gold, description: `${message.author} reached **level ${leveledTo}**!`, image: 'attachment://levelup.png', thumbnail: false });
+      try { await message.channel.send({ embeds: [embed], files: [new AttachmentBuilder(png, { name: 'levelup.png' })], allowedMentions: { parse: [] } }); }
+      catch { await message.channel.send(fallback).catch(() => {}); }
+    } else await message.channel.send(fallback).catch(() => {});
   }
 }
 
@@ -140,7 +146,7 @@ module.exports = {
       if (cards.available()) {
         await interaction.deferReply();
         const entries = board.slice(0, 10).map(([id, entry]) => ({ name: interaction.guild.members.cache.get(id)?.displayName ?? `User ${id}`, xp: entry.xp }));
-        const png = await cards.leaderboardCard({ server: interaction.guild.name, entries }).catch((err) => (console.error('[Leaderboard] card:', err.message), null));
+        const png = await cards.leaderboardCard({ server: interaction.guild.name, entries, accent: branding.accent(guildId) }).catch((err) => (console.error('[Leaderboard] card:', err.message), null));
         if (png) {
           try { return await interaction.editReply({ embeds: [embeds.make(interaction, { color: embeds.COLORS.gold, description: `Your rank: **${own < 0 ? 'Unranked' : `#${own + 1}`}**`, image: 'attachment://leaderboard.png', thumbnail: false })], files: [new AttachmentBuilder(png, { name: 'leaderboard.png' })] }); }
           catch (err) { console.error('[Leaderboard] image send:', err.message); }
@@ -170,7 +176,7 @@ module.exports = {
       await interaction.deferReply();
       const member = interaction.guild.members.cache.get(user.id);
       const png = await cards
-        .rankCard({ username: member?.displayName ?? user.username, avatarUrl: user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), level, rank: rank === -1 ? null : rank + 1, xp: into, needed, totalXp: entry.xp })
+        .rankCard({ username: member?.displayName ?? user.username, avatarUrl: user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), level, rank: rank === -1 ? null : rank + 1, xp: into, needed, totalXp: entry.xp, accent: branding.accent(guildId) })
         .catch((err) => (console.error('[/level rank] card failed:', err.message), null));
       if (png) {
         return interaction.editReply({

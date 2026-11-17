@@ -207,7 +207,7 @@ async function pingCard(data) {
   const q = quality(data.gateway >= 0 ? data.gateway : data.response);
   const canvas = canvasLib.createCanvas(W, H);
   const ctx = canvas.getContext('2d');
-  background(ctx, q.color);
+  background(ctx, data.accent ?? q.color);
 
   // left: avatar + name
   drawAvatar(ctx, await loadAvatar(data.avatarUrl), data.botName, 112, 112, 52, q.color);
@@ -282,7 +282,7 @@ async function pingCard(data) {
  */
 async function rankCard(data) {
   if (!canvasLib) return null;
-  const accent = '#00e5ff';
+  const accent = data.accent ?? '#00e5ff';
   const canvas = canvasLib.createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   background(ctx, accent);
@@ -328,11 +328,11 @@ async function rankCard(data) {
 }
 
 /** Shared premium cards; callers retain embed fallbacks if canvas is unavailable. */
-async function welcomeCard({ username, avatarUrl, server, count }) {
+async function welcomeCard({ username, avatarUrl, server, count, accent = '#00e5ff' }) {
   if (!canvasLib) return null;
   const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
-  background(ctx, '#00e5ff');
-  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 150, 180, 88, '#00e5ff');
+  background(ctx, accent);
+  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 150, 180, 88, accent);
   ctx.fillStyle = '#9caee4'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('A NEW MEMBER HAS ARRIVED', 285, 100);
   ctx.fillStyle = '#ffffff'; ctx.font = `45px "${FONT.bold}"`; ctx.fillText(fitText(ctx, username, 545), 285, 155);
   ctx.fillStyle = '#d4d8f5'; ctx.font = `24px "${FONT.regular}"`; ctx.fillText(`Welcome to ${fitText(ctx, server, 405)}`, 285, 200);
@@ -340,10 +340,10 @@ async function welcomeCard({ username, avatarUrl, server, count }) {
   return canvas.encode('png');
 }
 
-async function leaderboardCard({ server, entries }) {
+async function leaderboardCard({ server, entries, accent = '#ffc94d' }) {
   if (!canvasLib) return null;
   const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
-  background(ctx, '#ffc94d');
+  background(ctx, accent);
   ctx.fillStyle = '#ffffff'; ctx.font = `30px "${FONT.bold}"`; ctx.fillText('LEVEL LEADERBOARD', 55, 75);
   ctx.fillStyle = '#b4c0e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(fitText(ctx, server, 280), 55, 101);
   entries.slice(0, 10).forEach((entry, i) => {
@@ -355,11 +355,11 @@ async function leaderboardCard({ server, entries }) {
   return canvas.encode('png');
 }
 
-async function profileCard({ username, avatarUrl, joined, roleCount, level }) {
+async function profileCard({ username, avatarUrl, joined, roleCount, level, accent = '#9b5cff' }) {
   if (!canvasLib) return null;
   const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
-  background(ctx, '#9b5cff');
-  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 145, 175, 85, '#9b5cff');
+  background(ctx, accent);
+  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 145, 175, 85, accent);
   ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('MEMBER PROFILE', 280, 95);
   ctx.fillStyle = '#ffffff'; ctx.font = `40px "${FONT.bold}"`; ctx.fillText(fitText(ctx, username, 550), 280, 150);
   tile(ctx, 280, 192, 175, 78, 'Joined', joined || 'Unknown', '#00e5ff');
@@ -368,10 +368,10 @@ async function profileCard({ username, avatarUrl, joined, roleCount, level }) {
   return canvas.encode('png');
 }
 
-async function orderCard({ number, product, price, status, buyer }) {
+async function orderCard({ number, product, price, status, buyer, accent = '#00e5ff' }) {
   if (!canvasLib) return null;
   const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
-  background(ctx, '#00e5ff');
+  background(ctx, accent);
   ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('ORDER RECEIPT', 60, 85);
   ctx.fillStyle = '#ffffff'; ctx.font = `38px "${FONT.bold}"`; ctx.fillText(fitText(ctx, product, 610), 60, 135);
   ctx.fillStyle = '#9caee4'; ctx.font = `18px "${FONT.semi}"`; ctx.fillText(`Order #${number}  •  ${fitText(ctx, buyer, 420)}`, 60, 174);
@@ -380,4 +380,30 @@ async function orderCard({ number, product, price, status, buyer }) {
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, quality };
+async function serverCard({ name, iconUrl, members, boosts, channels, created, accent = '#00e5ff' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  drawAvatar(ctx, await loadAvatar(iconUrl), name, 130, 135, 70, accent);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('SERVER OVERVIEW', 245, 93);
+  ctx.fillStyle = '#fff'; ctx.font = `36px "${FONT.bold}"`; ctx.fillText(fitText(ctx, name, 580), 245, 145);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText(`CREATED ${created}`, 245, 178);
+  tile(ctx, 55, 220, 245, 78, 'Members', `${members}`, accent);
+  tile(ctx, 325, 220, 245, 78, 'Boosts', `${boosts}`, '#ffc94d');
+  tile(ctx, 595, 220, 245, 78, 'Channels', `${channels}`, '#9b5cff');
+  return canvas.encode('png');
+}
+
+async function levelUpCard({ username, avatarUrl, level, server, accent = '#ffc94d' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 150, 180, 85, accent);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `18px "${FONT.semi}"`; ctx.fillText('LEVEL UP', 285, 105);
+  ctx.fillStyle = '#fff'; ctx.font = `42px "${FONT.bold}"`; ctx.fillText(fitText(ctx, username, 520), 285, 157);
+  ctx.fillStyle = '#d4d8f5'; ctx.font = `22px "${FONT.regular}"`; ctx.fillText(`Reached level ${level} in ${fitText(ctx, server, 310)}`, 285, 205);
+  tile(ctx, 285, 235, 215, 70, 'New level', `${level}`, accent);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, quality };

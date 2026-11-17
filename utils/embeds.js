@@ -9,6 +9,7 @@
  * ---------------------------------------------------------------
  */
 const { EmbedBuilder } = require('discord.js');
+const db = require('./db');
 
 /** Brand colours used across the bot. */
 const COLORS = {
@@ -94,11 +95,12 @@ function clientOf(ctx) {
  */
 function make(ctx, opts = {}) {
   const client = clientOf(ctx);
-  const botName = client?.user?.username ?? 'Discord Bot';
+  const brand = ctx?.guildId || ctx?.guild?.id ? db.guild('settings', ctx.guildId ?? ctx.guild.id).branding ?? {} : {};
+  const botName = brand.footer ?? client?.user?.username ?? 'Discord Bot';
   const avatar = client?.user?.displayAvatarURL?.({ size: 256 }) ?? null;
 
   const embed = new EmbedBuilder()
-    .setColor(opts.color ?? COLORS.blurple)
+    .setColor((opts.color == null || opts.color === COLORS.blurple || opts.color === COLORS.cyan) ? (brand.color ?? opts.color ?? COLORS.blurple) : opts.color)
     .setFooter({
       text: opts.footer ? `${botName} • ${opts.footer}` : botName,
       iconURL: avatar ?? undefined,

@@ -28,6 +28,8 @@ const { buildQrPayloads, rupees } = require('./upiqr');
 const { buildLtcPayload } = require('./ltc');
 const ltc = require('../utils/ltc');
 const cards = require('../utils/cards');
+const branding = require('../utils/branding');
+const audit = require('../utils/audit');
 
 /** An LTC payment may be up to 1% short (wallet fees / rounding) and still count. */
 const LTC_TOLERANCE = 0.99;
@@ -47,21 +49,21 @@ function findProduct(guildId, text) {
   return productsOf(guildId).find(([id, p]) => id === wanted || p.name.toLowerCase() === wanted) ?? null;
 }
 
-function productsEmbed(ctx, guild) {
-  const list = productsOf(guild.id);
+function productsEmbed(ctx, guild, category = null) {
+  const list = productsOf(guild.id).filter(([, p]) => !category || (p.category ?? 'Uncategorized').toLowerCase() === category.toLowerCase());
   return embeds.make(ctx, {
     color: embeds.COLORS.cyan,
     title: `${embeds.e('nitro')} ${guild.name} — Shop`,
     description: list.length
-      ? list.map(([, p]) => `### ${p.name} — ${rupees(p.price)}\n${p.description ? `${p.description}\n` : ''}${stockText(p.stock)}`).join('\n')
+      ? list.map(([, p]) => `### ${p.name} — ${rupees(p.price)}\n**Category:** ${p.category ?? 'Uncategorized'}\n${p.description ? `${p.description}\n` : ''}${stockText(p.stock)}`).join('\n')
       : '*No products yet.*',
     thumbnail: guild.iconURL({ size: 256 }) ?? undefined,
     footer: `Press a button to order • Payment by ${[shopOf(guild.id).upiId && 'UPI', shopOf(guild.id).ltcAddress && 'Litecoin'].filter(Boolean).join(' or ') || 'UPI'}`,
   });
 }
 
-function buyRows(guildId) {
-  const buttons = productsOf(guildId).map(([id, p]) =>
+function buyRows(guildId, category = null) {
+  const buttons = productsOf(guildId).filter(([, p]) => !category || (p.category ?? 'Uncategorized').toLowerCase() === category.toLowerCase()).map(([id, p]) =>
     new ButtonBuilder().setCustomId(`shop_buy_${id}`).setLabel(`${p.name}`.slice(0, 60)).setEmoji('🛒').setStyle(ButtonStyle.Success).setDisabled(p.stock === 0),
   );
   const rows = [];
@@ -101,10 +103,10 @@ async function handleBuy(interaction, productId, couponCode = null) {
   const ticket = tickets.configOf(guild.id)?.tickets?.[channel.id];
   if (ticket) {
     db.updateGuild('orders', guild.id, (store) => {
-      (store.items ??= {})[channel.id] = { userId: user.id, number: ticket.number, productId, product: product.name, price, coupon: code, status: 'pending', createdAt: Date.now() };
+      (store.items ??= {})[channel.id] = { userId: user.id, number: ticket.number, productId, product: product.name, price, originalPrice: product.price, coupon: code, status: 'pending', createdAt: Date.now() };
     });
     let png = null;
-    if (cards.available()) png = await cards.orderCard({ number: ticket.number, product: product.name, price: rupees(price), status: 'PENDING', buyer: user.username }).catch((err) => (console.error('[Shop] receipt:', err.message), null));
+    if (cards.available()) png = await cards.orderCard({ number: ticket.number, product: product.name, price: rupees(price), status: 'PENDING', buyer: user.username, accent: branding.accent(guild.id) }).catch((err) => (console.error('[Shop] receipt:', err.message), null));
     const receipt = embeds.info(interaction, '🧾 Order Receipt', `Order **#${ticket.number}** • **${product.name}** • ${rupees(price)}\nStatus: **Pending payment**\nUse \`/shop orders\` to see your orders.`);
     if (png) receipt.setImage('attachment://receipt.png');
     const payload = { embeds: [receipt], ...(png ? { files: [new AttachmentBuilder(png, { name: 'receipt.png' })] } : {}), allowedMentions: { parse: [] } };
@@ -360,6 +362,11 @@ module.exports = {
         .addIntegerOption((o) => o.setName('amount').setDescription('New stock (-1 = unlimited)').setRequired(true).setMinValue(-1).setMaxValue(100000)),
     )
     .addSubcommand((s) => s.setName('products').setDescription('🛍️ Show all products with price and stock.'))
+    .addSubcommand((s) => s.setName('category').setDescription('Assign a product category (admin).').addStringOption(productOpt)
+      .addStringOption((o) => o.setName('name').setDescription('Category name; use Uncategorized to clear').setRequired(true).setMinLength(1).setMaxLength(30)))
+    .addSubcommand((s) => s.setName('dashboard').setDescription('Private sales dashboard (admin).'))
+    .addSubcommand((s) => s.setName('couponstats').setDescription('Private coupon statistics (admin).'))
+    .addSubcommand((s) => s.setName('notes').setDescription('View private order notes (staff).').addIntegerOption((o) => o.setName('number').setDescription('Order number').setRequired(true).setMinValue(1)))
     .addSubcommand((s) => s.setName('coupon').setDescription('🎟️ Create or replace a percentage coupon (admins).')
       .addStringOption((o) => o.setName('code').setDescription('Letters, numbers, dash or underscore').setRequired(true).setMinLength(2).setMaxLength(32))
       .addIntegerOption((o) => o.setName('percent').setDescription('Discount percentage').setRequired(true).setMinValue(1).setMaxValue(90))
@@ -370,7 +377,8 @@ module.exports = {
     .addSubcommand((s) => s.setName('delivered').setDescription('📦 Mark the paid order in this ticket as delivered (staff).'))
     .addSubcommand((s) =>
       s.setName('panel').setDescription('📌 Post the shop with Buy buttons (admins).')
-        .addChannelOption((o) => o.setName('channel').setDescription('Where to post (default: this channel)').addChannelTypes(ChannelType.GuildText)),
+        .addChannelOption((o) => o.setName('channel').setDescription('Where to post (default: this channel)').addChannelTypes(ChannelType.GuildText))
+        .addStringOption((o) => o.setName('category').setDescription('Optional product category filter').setMaxLength(30)),
     ),
 
   async execute(interaction) {
@@ -395,7 +403,43 @@ module.exports = {
       return interaction.reply({ embeds: [embeds.success(interaction, 'Order Delivered', `Order **#${order.number}** marked delivered. The buyer can review using \`/vouch give\`.`)], allowedMentions: { parse: [] } });
     }
 
+    if (sub === 'notes') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use Slash Command', 'Order notes are private. Use `/shop notes`.')] });
+      if (!tickets.isStaff(interaction.member, tickets.configOf(guild.id))) return fail('Staff Only', 'Only the support team can view notes.');
+      const number = interaction.options.getInteger('number', true);
+      const item = Object.entries(db.guild('orders', guild.id).items ?? {}).find(([, order]) => order.number === number);
+      if (!item) return fail('Order Not Found', 'Only tracked orders can be viewed.');
+      if (item[1].userId === interaction.user.id) return fail('Not Allowed', 'Buyers cannot view internal notes on their own orders.');
+      const notes = db.guild('ordernotes', guild.id).items?.[item[0]] ?? [];
+      const text = notes.slice(-10).reverse().map((n) => `<t:${Math.floor(n.at / 1000)}:R> • <@${n.by}>\n${n.text}`).join('\n\n') || 'No notes.';
+      return interaction.reply({ ...embeds.ephemeral(embeds.make(interaction, { title: `Private Notes — Order #${number}`, description: text })), allowedMentions: { parse: [] } });
+    }
+
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return fail('Missing Permission', 'You need the **Manage Server** permission for this.');
+
+    if (sub === 'dashboard' || sub === 'couponstats') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use Slash Command', 'Sales statistics are private. Use the slash command.')] });
+      const orders = Object.values(db.guild('orders', guild.id).items ?? {}).filter((o) => o.status === 'paid' || o.status === 'delivered');
+      if (sub === 'dashboard') {
+        const total = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+        const counts = new Map(); for (const o of orders) counts.set(o.product, (counts.get(o.product) ?? 0) + 1);
+        const top = [...counts.entries()].sort((a,b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => `${name} — ${count}`).join('\n') || 'No paid orders.';
+        return interaction.reply(embeds.ephemeral(embeds.make(interaction, { title: '📊 Sales Dashboard', description: 'Tracked orders only. Revenue is recorded order value, not a bank reconciliation.', fields: [ { name: 'Paid orders', value: `${orders.length}`, inline: true }, { name: 'Recorded revenue', value: rupees(total), inline: true }, { name: 'Top products', value: top.slice(0, 1024) } ] })));
+      }
+      const groups = {};
+      for (const o of orders.filter((o) => o.coupon)) { const g = (groups[o.coupon] ??= { count: 0, discount: 0, unknown: 0 }); g.count++; if (Number.isFinite(o.originalPrice) && Number.isFinite(o.price)) g.discount += Math.max(0, o.originalPrice - o.price); else g.unknown++; }
+      const rows = Object.entries(groups).sort((a,b) => b[1].count - a[1].count).slice(0, 15).map(([code, g]) => `\`${code}\` — ${g.count} paid • ${rupees(g.discount)} known discount${g.unknown ? ` (${g.unknown} older unknown)` : ''}`);
+      return interaction.reply(embeds.ephemeral(embeds.make(interaction, { title: '🎟️ Coupon Statistics', description: rows.join('\n') || 'No paid coupon orders recorded.', footer: 'Counts tracked paid orders, not pending uses' })));
+    }
+    if (sub === 'category') {
+      const found = findProduct(guild.id, interaction.options.getString('product', true));
+      if (!found) return fail('Product Not Found', 'Check `/shop products`.');
+      const name = interaction.options.getString('name', true).trim();
+      if (!name || /[\n\r]/.test(name)) return fail('Invalid Category', 'Enter a non-empty single-line category.');
+      db.updateGuild('shop', guild.id, (store) => { store.products[found[0]].category = name; });
+      audit.record(guild.id, interaction.user.id, 'shop.category', found[0]);
+      return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Category Saved', `Product category updated to **${name}**. Repost the panel to update it.`)));
+    }
 
     if (sub === 'coupon' || sub === 'uncoupon') {
       const code = interaction.options.getString('code', true).trim().toUpperCase();
@@ -403,11 +447,13 @@ module.exports = {
       if (sub === 'uncoupon') {
         if (!shopOf(guild.id).coupons?.[code]) return fail('Coupon Not Found', 'No coupon with that code exists.');
         db.updateGuild('shop', guild.id, (shop) => { delete shop.coupons[code]; });
+        audit.record(guild.id, interaction.user.id, 'shop.coupon.remove');
         return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Coupon Removed', `Coupon \`${code}\` is no longer valid.`)));
       }
       const percent = interaction.options.getInteger('percent', true), days = interaction.options.getInteger('days', true);
       const expiresAt = Date.now() + days * 86400000;
       db.updateGuild('shop', guild.id, (shop) => { (shop.coupons ??= {})[code] = { percent, expiresAt }; });
+      audit.record(guild.id, interaction.user.id, 'shop.coupon.set');
       return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Coupon Saved', `\`${code}\`: **${percent}% off**, expires <t:${Math.floor(expiresAt / 1000)}:R>. Reusable until removed or expired; minimum order ₹1.`)));
     }
 
@@ -419,6 +465,7 @@ module.exports = {
         shop.payeeName = interaction.options.getString('name', true).trim();
         shop.products ??= {};
       });
+      audit.record(guild.id, interaction.user.id, 'shop.payment.setup');
       return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Shop Payment Details Saved', `Orders will show a QR for \`${upiId}\`.\nNext: \`/shop add\`, then \`/shop panel\`.`)));
     }
 
@@ -429,6 +476,7 @@ module.exports = {
         shop.ltcAddress = address;
         shop.products ??= {};
       });
+      audit.record(guild.id, interaction.user.id, 'shop.ltc', address ? 'enabled' : 'disabled');
       return interaction.reply(
         embeds.ephemeral(
           address
@@ -448,6 +496,7 @@ module.exports = {
         shop.counter = (shop.counter ?? 0) + 1;
         (shop.products ??= {})[`p${shop.counter}`] = { name, price, stock, description: interaction.options.getString('description')?.trim() ?? '' };
       });
+      audit.record(guild.id, interaction.user.id, 'shop.product.add');
       return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Product Added', `**${name}** — ${rupees(price)} • ${stockText(stock)}\nRun \`/shop panel\` again to refresh the buttons.`)));
     }
 
@@ -459,12 +508,14 @@ module.exports = {
         db.updateGuild('shop', guild.id, (shop) => {
           delete shop.products[id];
         });
+        audit.record(guild.id, interaction.user.id, 'shop.product.remove', id);
         return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Product Removed', `**${product.name}** is no longer sold.`)));
       }
       const amount = interaction.options.getInteger('amount', true);
       db.updateGuild('shop', guild.id, (shop) => {
         shop.products[id].stock = amount;
       });
+      audit.record(guild.id, interaction.user.id, 'shop.stock', id);
       return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Stock Updated', `**${product.name}** — ${stockText(amount)}`)));
     }
 
@@ -475,7 +526,10 @@ module.exports = {
     if (!channel?.permissionsFor(guild.members.me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
       return fail('I Cannot Post There', `I need **View Channel**, **Send Messages** and **Embed Links** in ${channel ?? 'that channel'}.`);
     }
-    await channel.send({ embeds: [productsEmbed(interaction, guild)], components: buyRows(guild.id) });
+    const category = interaction.options.getString('category')?.trim() || null;
+    const rows = buyRows(guild.id, category);
+    if (!rows.length) return fail('No Products', 'No products match that category.');
+    await channel.send({ embeds: [productsEmbed(interaction, guild, category)], components: rows });
     return interaction.reply(embeds.ephemeral(embeds.success(interaction, 'Shop Panel Posted', `Members can now order in ${channel}.`)));
   },
 };

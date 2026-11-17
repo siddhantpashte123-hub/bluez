@@ -5,6 +5,8 @@
 const { SlashCommandBuilder, InteractionContextType, ChannelType, AttachmentBuilder, version: djsVersion } = require('discord.js');
 const embeds = require('../utils/embeds');
 const cards = require('../utils/cards');
+const branding = require('../utils/branding');
+const db = require('../utils/db');
 
 function uptime(ms) {
   const s = Math.floor(ms / 1000);
@@ -45,7 +47,7 @@ module.exports = {
 
       // Premium look: the result is drawn as an image card.
       const png = await cards
-        .pingCard({ botName: client.user.username, avatarUrl: client.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), gateway, response, uptime: client.uptime ?? 0, servers: client.guilds.cache.size })
+        .pingCard({ botName: client.user.username, avatarUrl: client.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), gateway, response, uptime: client.uptime ?? 0, servers: client.guilds.cache.size, accent: branding.accent(guild.id) })
         .catch((err) => (console.error('[/info ping] card failed:', err.message), null));
       if (png) {
         return interaction.editReply({
@@ -91,7 +93,15 @@ module.exports = {
     // server
     const channels = guild.channels.cache;
     const created = Math.floor(guild.createdTimestamp / 1000);
-    return interaction.reply({
+    let png = null;
+    if (cards.available()) {
+      await interaction.deferReply();
+      const color = db.guild('settings', guild.id).branding?.color;
+      png = await cards.serverCard({ name: guild.name, iconUrl: guild.iconURL({ extension: 'png', forceStatic: true, size: 256 }), members: guild.memberCount, boosts: guild.premiumSubscriptionCount ?? 0, channels: channels.size, created: new Date(guild.createdTimestamp).toISOString().slice(0, 10), ...(color != null ? { accent: `#${color.toString(16).padStart(6, '0')}` } : {}) }).catch((err) => (console.error('[Server card]', err.message), null));
+    }
+    const send = (payload) => interaction.deferred ? interaction.editReply(payload) : interaction.reply(payload);
+    const payload = {
+      ...(png ? { files: [new AttachmentBuilder(png, { name: 'server.png' })] } : {}),
       embeds: [
         embeds.make(interaction, {
           color: embeds.COLORS.cyan,
@@ -109,9 +119,15 @@ module.exports = {
             { name: '📅 Created', value: `<t:${created}:D> (<t:${created}:R>)`, inline: true },
           ],
           thumbnail: guild.iconURL({ size: 512 }) ?? undefined,
-          image: guild.bannerURL({ size: 1024 }) ?? undefined,
+          image: png ? 'attachment://server.png' : guild.bannerURL({ size: 1024 }) ?? undefined,
         }),
       ],
-    });
+    };
+    try { return await send(payload); }
+    catch (err) {
+      if (!png) throw err;
+      payload.embeds[0].setImage(guild.bannerURL({ size: 1024 }) ?? null);
+      return interaction.editReply({ embeds: payload.embeds, files: [] });
+    }
   },
 };
