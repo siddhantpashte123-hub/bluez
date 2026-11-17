@@ -260,34 +260,38 @@ function card(interaction, page, disabled = false) {
     const branding = require('../utils/db').guild('settings', interaction.guildId ?? interaction.guild?.id).branding ?? {};
     const title = branding.name || client.user.username;
     const color = branding.color ?? embeds.COLORS.blurple;
+    // Two category names per line keeps every category visible without a tall card.
+    const categoryLines = [];
+    for (let i = 0; i < CATEGORIES.length; i += 2) {
+      categoryLines.push(CATEGORIES.slice(i, i + 2).map((c) => `${c.emoji} **${c.name}**`).join('　•　'));
+    }
     container
       .setAccentColor(color)
       .addSectionComponents(
         new SectionBuilder().addTextDisplayComponents(
-          text(`# ${embeds.e('boostShine')} ${title}  ·  COMMAND CENTRE`),
-          text(`Welcome, ${interaction.user} ${embeds.e('bow')}\nExplore the bot using the category menu below.`),
+          text(`# ${embeds.e('boostShine')} ${title}\n-# ${embeds.e('nitro')} COMMAND CENTRE`),
+          text(`${embeds.e('bow')} Welcome, ${interaction.user}!\nPick a category to explore the commands.`),
         ).setThumbnailAccessory(new ThumbnailBuilder().setURL(client.user.displayAvatarURL({ size: 256 }))),
       )
       .addSeparatorComponents(line())
       .addTextDisplayComponents(text(
-        `**${client.commands?.size ?? COMMAND_COUNT}** commands　 •　 **${CATEGORIES.length}** categories　 •　 **${client.guilds.cache.size}** servers　 •　 **${ping}**\n` +
+        `${embeds.e('boostGem15')} **Commands** \`${client.commands?.size ?? COMMAND_COUNT}\`　•　${embeds.e('boostGem24')} **Categories** \`${CATEGORIES.length}\`\n` +
+        `${embeds.e('nitro')} **Servers** \`${client.guilds.cache.size}\`　•　📶 **Ping** \`${ping}\`\n` +
         '-# Slash commands and `!` prefix • Private actions are slash-only'
       ))
       .addSeparatorComponents(line())
       .addTextDisplayComponents(text(
-        `### ✦ Explore your toolkit\n` +
-        `🛡️ Moderation & protection　•　🎫 Tickets & support\n` +
-        `🛒 Shop & orders　•　⭐ Levels & community\n` +
-        `🎵 Music & voice　•　🤖 Automation & utilities\n\n` +
-        `-# Select any category below for commands and examples.`
+        `### ${embeds.e('gift')} Explore your toolkit\n` +
+        `${categoryLines.join('\n')}\n\n` +
+        `-# ${embeds.e('boostShine')} Select a category below for commands and examples.`
       ));
   } else {
     const category = CATEGORIES[page - 1];
     container
       .setAccentColor(category.color)
-      .addTextDisplayComponents(text(`## ${category.emoji} ${category.name}\n-# ${category.blurb}`))
+      .addTextDisplayComponents(text(`## ${category.emoji} ${category.name} ${embeds.e('boostShine')}\n-# ${category.blurb}`))
       .addSeparatorComponents(line())
-      .addTextDisplayComponents(text(category.commands.map(([usage, info]) => `**\`${usage}\`**\n> ${info}`).join('\n')));
+      .addTextDisplayComponents(text(category.commands.map(([usage, info]) => `${embeds.e('tick')} **\`${usage}\`**\n> ${info}`).join('\n')));
   }
 
   container
@@ -315,7 +319,7 @@ function pageEmbed(interaction, page) {
       description:
         `Hey ${interaction.user}! ${embeds.e('gift')} Welcome to the command centre.\n` +
         'Use the buttons below to browse the categories.\n' +
-        'Every command works as a slash command **and** with the prefix `!` — e.g. `/calc` or `!calc 2+2`.\n\u200b',
+        'Use slash commands or the prefix `!` — e.g. `/calc` or `!calc 2+2`. Private actions are slash-only.\n\u200b',
       fields: [
         ...CATEGORIES.map((c, i) => ({ name: `${c.emoji} ${c.name}`, value: `${c.blurb}\n\`Page ${i + 2}\` • ${c.commands.length} commands`, inline: true })),
         { name: '📈 Stats', value: `**${COMMAND_COUNT}** commands\n**${interaction.client.guilds.cache.size}** servers`, inline: true },

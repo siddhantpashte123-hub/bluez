@@ -334,7 +334,7 @@ Run mock/unit tests with `node --test tests/premium.test.js`. Live Discord permi
 
 ## Premium command centre and operations
 
-- `/help` has a redesigned compact home and category selector. `/info server` and level-up announcements now include image cards where canvas and attachment permissions are available.
+- `/help` has a premium home with emoji-labelled stats, all category icons and an interactive category selector. App emojis fall back to Unicode if unavailable. `/info server` and level-up announcements now include image cards where canvas and attachment permissions are available.
 - `/branding set color:#5865F2 name:Bluez footer:Bluez` updates the help name, common embed accent/footer, and image-card background accents; `/branding reset` restores defaults. Latency-quality colors remain status-based.
 - `/ticket category kind:support support_role:@Role category:#Category question:"How can we help?"` configures a type; use `question:off` to remove the question or `reset:true` to clear overrides. `/ticket setup kind:support` can post a panel for just that type. Existing open tickets keep their role access. The shared default support role is managed with `/ticket setup`.
 - `/ticket inactivity hours:24` enables reminders after no human ticket activity; `0` disables them. Messages reset the timer. The bot sends at most one reminder per inactive period. Requires Message Content/Server Members intents as configured in setup.
