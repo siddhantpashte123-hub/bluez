@@ -259,12 +259,14 @@ Settings and data of these features are stored in `data/*.json` (created automat
 ![Rank card](assets/preview/rank.png)
 ![Bot information card](assets/preview/bot-info.png)
 ![Litecoin price card](assets/preview/ltc-price.png)
-![Coin flip card](assets/preview/coinflip.png)
+![Coin flip heads card](assets/preview/coinflip.png)
+![Coin flip tails card](assets/preview/coinflip-tails.png)
 
 Preview values are illustrative, not live prices.
 
 - Drawn with `@napi-rs/canvas` (installed by `npm install`, no system packages needed). The Inter font is bundled in `assets/fonts`, so it also works on a VPS without any fonts.
 - If the package cannot be installed, these commands fall back to their normal embed. The three new cards also retry with an embed if an attachment cannot be sent. LTC prices use the existing provider and can be cached for up to 60 seconds.
+- Coin flips use one independent 50/50 draw for each command; consecutive identical results are possible. The image and text always show the same result.
 - Names are drawn with Latin/Greek/Cyrillic letters only; emojis and other scripts are left out of the image.
 
 ---

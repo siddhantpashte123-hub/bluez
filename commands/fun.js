@@ -2,6 +2,7 @@
  * /fun 8ball <question> | coinflip | dice [sides] | choose <options>
  */
 const { SlashCommandBuilder, InteractionContextType } = require('discord.js');
+const crypto = require('node:crypto');
 const embeds = require('../utils/embeds');
 const cards = require('../utils/cards');
 const branding = require('../utils/branding');
@@ -26,8 +27,9 @@ module.exports = {
 
     if (sub === '8ball') return reply('🎱 Magic 8-Ball', `**Q:** ${interaction.options.getString('question', true)}\n**A:** ${pick(ANSWERS)}`);
     if (sub === 'coinflip') {
-      const result = pick(['Heads', 'Tails']);
-      const embed = embeds.make(interaction, { color: embeds.COLORS.gold, title: '🪙 Coin Flip', description: `It landed on **${result}**!` });
+      // One unbiased, independent draw per command; repeats are possible.
+      const result = crypto.randomInt(2) === 0 ? 'Heads' : 'Tails';
+      const embed = embeds.make(interaction, { color: embeds.COLORS.gold, title: '🪙 Coin Flip', description: `It landed on **${result}**!`, thumbnail: false });
       let png = null;
       if (cards.available()) {
         await interaction.deferReply();

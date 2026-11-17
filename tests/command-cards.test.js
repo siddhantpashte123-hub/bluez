@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const cards = require('../utils/cards');
 const db = require('../utils/db');
 const ltc = require('../utils/ltc');
@@ -65,17 +66,40 @@ test('/ltc price uses exactly the fetched rates in both card and embed', async (
   } finally { cards.available = previous.available; cards.ltcPriceCard = previous.fn; ltc.getRates = previous.rates; }
 });
 
-test('/fun coinflip uses the same single toss for card and text', async () => {
-  const previous = { available: cards.available, fn: cards.coinFlipCard, random: Math.random };
+test('/fun coinflip uses one independent toss for both the image and text', async () => {
+  const previous = { available: cards.available, fn: cards.coinFlipCard, randomInt: crypto.randomInt };
   let input, randomCalls = 0;
+  const draws = [0, 1, 1];
   try {
     cards.available = () => true; cards.coinFlipCard = async (data) => { input = data; return fakePng; };
-    Math.random = () => { randomCalls++; return 0.9; };
-    const i = interaction('coinflip'); await fun.execute(i);
-    assert.equal(randomCalls, 1); assert.equal(input.result, 'Tails');
-    assert.match(last(i).embeds[0].data.description, /Tails/);
-    assert.equal(last(i).embeds[0].data.image.url, 'attachment://coinflip.png');
-  } finally { cards.available = previous.available; cards.coinFlipCard = previous.fn; Math.random = previous.random; }
+    crypto.randomInt = (limit) => { assert.equal(limit, 2); randomCalls++; return draws.shift(); };
+    for (const expected of ['Heads', 'Tails', 'Tails']) {
+      const i = interaction('coinflip'); await fun.execute(i);
+      assert.equal(input.result, expected);
+      assert.match(last(i).embeds[0].data.description, new RegExp(expected));
+      assert.equal(last(i).embeds[0].data.image.url, 'attachment://coinflip.png');
+      assert.equal(last(i).embeds[0].data.thumbnail, undefined);
+    }
+    assert.equal(randomCalls, 3); // repeated results are allowed, with no second random call per flip
+  } finally { cards.available = previous.available; cards.coinFlipCard = previous.fn; crypto.randomInt = previous.randomInt; }
+});
+
+test('both coin outcomes survive canvas and attachment failures', async () => {
+  const previous = { available: cards.available, fn: cards.coinFlipCard, randomInt: crypto.randomInt };
+  const oldWarn = console.warn;
+  try {
+    console.warn = () => {};
+    cards.available = () => false; crypto.randomInt = () => 0;
+    const heads = interaction('coinflip'); await fun.execute(heads);
+    assert.match(last(heads).embeds[0].data.description, /Heads/);
+    assert.equal(last(heads).files, undefined);
+    cards.available = () => true; cards.coinFlipCard = async () => fakePng; crypto.randomInt = () => 1;
+    const tails = interaction('coinflip'); let attempts = 0;
+    tails.editReply = async (p) => { if (++attempts === 1) throw Error('missing Attach Files'); tails.responses.push(p); };
+    await fun.execute(tails);
+    assert.equal(attempts, 2); assert.match(last(tails).embeds[0].data.description, /Tails/);
+    assert.equal(last(tails).embeds[0].data.image, undefined);
+  } finally { cards.available = previous.available; cards.coinFlipCard = previous.fn; crypto.randomInt = previous.randomInt; console.warn = oldWarn; }
 });
 
 test('embed fallback works when optional canvas is missing for all three', async () => {

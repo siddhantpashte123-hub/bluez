@@ -449,17 +449,39 @@ async function coinFlipCard({ result, username, accent = '#ffc94d' }) {
   if (!canvasLib) return null;
   const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
   background(ctx, accent);
-  const coin = ctx.createLinearGradient(50, 70, 220, 280);
-  coin.addColorStop(0, '#fff1b3'); coin.addColorStop(0.45, '#f1c051'); coin.addColorStop(1, '#9b5e17');
-  ctx.beginPath(); ctx.arc(150, 180, 93, 0, Math.PI * 2); ctx.fillStyle = coin; ctx.fill();
-  ctx.beginPath(); ctx.arc(150, 180, 79, 0, Math.PI * 2); ctx.strokeStyle = '#ffe7a0'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.beginPath(); ctx.arc(150, 180, 70, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(116,65,13,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#75420e'; ctx.font = `86px "${FONT.bold}"`; ctx.fillText(result === 'Heads' ? 'H' : 'T', 150, 183); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#aeb9e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText('C O I N   F L I P', 290, 101);
-  ctx.fillStyle = '#ffffff'; ctx.font = `21px "${FONT.regular}"`; ctx.fillText('The coin landed on', 290, 145);
-  const gold = ctx.createLinearGradient(290, 160, 610, 225); gold.addColorStop(0, '#fff4c4'); gold.addColorStop(1, '#ffc94d');
-  ctx.fillStyle = gold; ctx.font = `64px "${FONT.bold}"`; ctx.fillText(fitText(ctx, result.toUpperCase(), 475), 290, 220);
-  ctx.fillStyle = '#aeb9e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(`FLIPPED BY  ${fitText(ctx, username, 350)}`, 290, 285);
+
+  // Polished gold coin with a shadow, bevel, dotted edge and distinct faces.
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,190,55,0.34)'; ctx.shadowBlur = 30;
+  ctx.beginPath(); ctx.arc(154, 181, 105, 0, Math.PI * 2);
+  const edge = ctx.createLinearGradient(55, 70, 235, 285);
+  edge.addColorStop(0, '#fff3c2'); edge.addColorStop(0.35, '#f8cc62'); edge.addColorStop(1, '#91601b');
+  ctx.fillStyle = edge; ctx.fill(); ctx.restore();
+
+  ctx.beginPath(); ctx.arc(154, 181, 92, 0, Math.PI * 2);
+  const face = ctx.createLinearGradient(70, 90, 220, 270);
+  face.addColorStop(0, '#ffe7a2'); face.addColorStop(0.45, '#dba943'); face.addColorStop(1, '#f5cf76');
+  ctx.fillStyle = face; ctx.fill();
+  ctx.beginPath(); ctx.arc(154, 181, 83, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(115,70,16,0.42)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(110,65,15,0.48)';
+  for (let i = 0; i < 32; i++) {
+    const angle = (i * Math.PI * 2) / 32;
+    ctx.beginPath(); ctx.arc(154 + Math.cos(angle) * 88, 181 + Math.sin(angle) * 88, 1.7, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Letters make both sides unambiguous even when the image is displayed small.
+  ctx.fillStyle = 'rgba(102,57,9,0.82)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `91px "${FONT.bold}"`; ctx.fillText(result === 'Heads' ? 'H' : 'T', 154, 183);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Result panel: the displayed result always comes from the single toss.
+  ctx.fillStyle = '#b4c2ed'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('C O I N   F L I P   /   R E S U L T', 310, 92);
+  ctx.fillStyle = '#d9dff8'; ctx.font = `21px "${FONT.regular}"`; ctx.fillText('The coin landed on', 310, 133);
+  const gold = ctx.createLinearGradient(310, 150, 650, 218); gold.addColorStop(0, '#fff8de'); gold.addColorStop(1, '#ffc94d');
+  ctx.fillStyle = gold; ctx.font = `68px "${FONT.bold}"`; ctx.fillText(fitText(ctx, result.toUpperCase(), 460), 310, 211);
+  roundRect(ctx, 310, 244, 460, 52, 15); ctx.fillStyle = 'rgba(8,10,28,0.50)'; ctx.fill();
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `13px "${FONT.semi}"`; ctx.fillText('FLIPPED BY', 330, 264);
+  ctx.fillStyle = '#ffffff'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText(fitText(ctx, username, 400), 330, 285);
   return canvas.encode('png');
 }
 
