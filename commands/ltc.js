@@ -8,6 +8,9 @@
 const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
 const ltc = require('../utils/ltc');
+const cards = require('../utils/cards');
+const branding = require('../utils/branding');
+const { sendCard } = require('../utils/card-response');
 
 const money = (n, currency) => n.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 });
 
@@ -83,15 +86,22 @@ module.exports = {
 
     if (sub === 'price') {
       await interaction.reply({ embeds: [embeds.loading(interaction, 'Loading the LTC price...')] });
+      let rates;
       try {
-        const rates = await ltc.getRates();
-        return interaction.editReply({
-          embeds: [embeds.make(interaction, { color: embeds.COLORS.cyan, title: '📈 Litecoin Price', fields: [{ name: '🇮🇳 INR', value: `**${money(rates.inr, 'INR')}**`, inline: true }, { name: '🇺🇸 USD', value: `**${money(rates.usd, 'USD')}**`, inline: true }] })],
-        });
+        rates = await ltc.getRates();
       } catch (err) {
         console.error('[/ltc price]', err.message);
         return interaction.editReply({ embeds: [embeds.error(interaction, 'Price Not Available', 'The price services did not answer. Please try again in a moment.')] });
       }
+      const inr = money(rates.inr, 'INR'), usd = money(rates.usd, 'USD');
+      const embed = embeds.make(interaction, {
+        color: embeds.COLORS.cyan, title: '📈 Litecoin Price',
+        description: 'Price for 1 LTC. Rates may be cached for up to 60 seconds.',
+        fields: [{ name: '🇮🇳 INR', value: `**${inr}**`, inline: true }, { name: '🇺🇸 USD', value: `**${usd}**`, inline: true }],
+      });
+      const png = cards.available() ? await cards.ltcPriceCard({ inr, usd, accent: branding.accent(interaction.guildId ?? interaction.guild.id) })
+        .catch((err) => (console.error('[/ltc price] card:', err.message), null)) : null;
+      return sendCard(interaction, embed, png, 'ltc-price.png');
     }
 
     // check

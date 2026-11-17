@@ -4,6 +4,7 @@
  * Image cards (PNG) drawn with @napi-rs/canvas:
  *   pingCard({ botName, avatarUrl, gateway, response, uptime, servers })
  *   rankCard({ username, avatarUrl, level, rank, xp, needed, totalXp })
+ *   botInfoCard(), ltcPriceCard(), coinFlipCard()
  *
  * Each function returns a PNG Buffer, or null when images are not
  * available on this machine (the canvas package is optional). Callers
@@ -406,4 +407,60 @@ async function levelUpCard({ username, avatarUrl, level, server, accent = '#ffc9
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, quality };
+/** Bot information: avatar and six live runtime statistics. */
+async function botInfoCard({ botName, avatarUrl, servers, commands, uptime, memory, nodeVersion, discordVersion, accent = '#00e5ff' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  drawAvatar(ctx, await loadAvatar(avatarUrl), botName, 98, 94, 43, accent);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('B O T   O V E R V I E W', 165, 78);
+  ctx.fillStyle = '#ffffff'; ctx.font = `30px "${FONT.bold}"`; ctx.fillText(fitText(ctx, botName, 435), 165, 118);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `14px "${FONT.semi}"`; ctx.textAlign = 'right'; ctx.fillText('SYSTEM STATUS', 839, 80); ctx.textAlign = 'left';
+  tile(ctx, 55, 154, 245, 70, 'Servers', String(servers), accent);
+  tile(ctx, 325, 154, 245, 70, 'Commands', String(commands), '#9b5cff');
+  tile(ctx, 595, 154, 245, 70, 'Uptime', uptime, '#2ee59d');
+  tile(ctx, 55, 240, 245, 70, 'Memory', memory, '#ffc94d');
+  tile(ctx, 325, 240, 245, 70, 'Node.js', nodeVersion, accent);
+  tile(ctx, 595, 240, 245, 70, 'Discord.js', discordVersion, '#9b5cff');
+  return canvas.encode('png');
+}
+
+/** Rates come from the existing price provider, which caches them for up to one minute. */
+async function ltcPriceCard({ inr, usd, accent = '#00e5ff' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  const coin = ctx.createLinearGradient(50, 70, 220, 280);
+  coin.addColorStop(0, '#ffffff'); coin.addColorStop(0.45, '#c2d4e8'); coin.addColorStop(1, '#6284b4');
+  ctx.beginPath(); ctx.arc(145, 174, 89, 0, Math.PI * 2); ctx.fillStyle = coin; ctx.fill();
+  ctx.beginPath(); ctx.arc(145, 174, 76, 0, Math.PI * 2); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.stroke();
+  ctx.fillStyle = '#273d63'; ctx.font = `100px "${FONT.bold}"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Ł', 145, 179); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('MARKET PRICE  /  1 LTC', 280, 95);
+  ctx.fillStyle = '#ffffff'; ctx.font = `38px "${FONT.bold}"`; ctx.fillText('Litecoin', 280, 142);
+  ctx.fillStyle = '#9ba9d2'; ctx.font = `16px "${FONT.regular}"`; ctx.fillText('Price in your preferred currency', 280, 172);
+  tile(ctx, 280, 200, 255, 78, 'INR', inr, accent);
+  tile(ctx, 555, 200, 255, 78, 'USD', usd, '#9b5cff');
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `13px "${FONT.regular}"`; ctx.fillText('Rates may be cached for up to 60 seconds.', 280, 311);
+  return canvas.encode('png');
+}
+
+/** Coin artwork reflects the exact result chosen by the command, not a second flip. */
+async function coinFlipCard({ result, username, accent = '#ffc94d' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  const coin = ctx.createLinearGradient(50, 70, 220, 280);
+  coin.addColorStop(0, '#fff1b3'); coin.addColorStop(0.45, '#f1c051'); coin.addColorStop(1, '#9b5e17');
+  ctx.beginPath(); ctx.arc(150, 180, 93, 0, Math.PI * 2); ctx.fillStyle = coin; ctx.fill();
+  ctx.beginPath(); ctx.arc(150, 180, 79, 0, Math.PI * 2); ctx.strokeStyle = '#ffe7a0'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(150, 180, 70, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(116,65,13,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#75420e'; ctx.font = `86px "${FONT.bold}"`; ctx.fillText(result === 'Heads' ? 'H' : 'T', 150, 183); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText('C O I N   F L I P', 290, 101);
+  ctx.fillStyle = '#ffffff'; ctx.font = `21px "${FONT.regular}"`; ctx.fillText('The coin landed on', 290, 145);
+  const gold = ctx.createLinearGradient(290, 160, 610, 225); gold.addColorStop(0, '#fff4c4'); gold.addColorStop(1, '#ffc94d');
+  ctx.fillStyle = gold; ctx.font = `64px "${FONT.bold}"`; ctx.fillText(fitText(ctx, result.toUpperCase(), 475), 290, 220);
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(`FLIPPED BY  ${fitText(ctx, username, 350)}`, 290, 285);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, quality };

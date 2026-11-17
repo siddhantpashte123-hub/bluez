@@ -253,13 +253,18 @@ Settings and data of these features are stored in `data/*.json` (created automat
 
 ## 🖼️ Image cards
 
-`/info ping` and `/level rank` answer with a drawn image card instead of plain text:
+`/info ping`, `/level rank`, `/info bot`, `/ltc price` and `/fun coinflip` have drawn image cards. The last three also keep their readable embed details:
 
 ![Ping card](assets/preview/ping.png)
 ![Rank card](assets/preview/rank.png)
+![Bot information card](assets/preview/bot-info.png)
+![Litecoin price card](assets/preview/ltc-price.png)
+![Coin flip card](assets/preview/coinflip.png)
+
+Preview values are illustrative, not live prices.
 
 - Drawn with `@napi-rs/canvas` (installed by `npm install`, no system packages needed). The Inter font is bundled in `assets/fonts`, so it also works on a VPS without any fonts.
-- If the package cannot be installed on a machine, the bot keeps working and these commands answer with their normal embed.
+- If the package cannot be installed, these commands fall back to their normal embed. The three new cards also retry with an embed if an attachment cannot be sent. LTC prices use the existing provider and can be cached for up to 60 seconds.
 - Names are drawn with Latin/Greek/Cyrillic letters only; emojis and other scripts are left out of the image.
 
 ---
