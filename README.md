@@ -1,6 +1,6 @@
 # 🤖 Premium Discord Bot
 
-A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash commands only, premium embeds everywhere, JSON file storage, and a one-click installer.
+A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash and `!` prefix commands, premium embeds and image cards, JSON file storage, and a one-click installer.
 
 > **No Docker.** The bot runs natively (`node index.js` / `npm start`) and is kept online 24/7 by **PM2**.
 
@@ -317,3 +317,16 @@ The bot uses five custom emojis (tick, caution, two gifts, bow). Their IDs are l
 | Autoresponder / AFK does nothing | Message Content Intent is off, or the bot cannot send messages in that channel |
 | Bot does not join the voice channel | Give it **View Channel** and **Connect** in that channel |
 | `pm2` is not recognised (Windows) | Close the window and open a new terminal so the updated PATH is loaded |
+
+
+## Premium cards, shop and support upgrades
+
+- `/welcome set` enables a welcome banner; `/welcome test` previews it. `/level leaderboard` and `/userinfo` have matching cards. Images need optional `@napi-rs/canvas` and Attach Files; welcome and leaderboard retain embed fallbacks. Avatar download failures use initials.
+- `/shop coupon code:SALE percent:10 days:7` creates a reusable coupon valid for seven days; `/shop uncoupon code:SALE` removes it. Buyers enter the optional code after pressing Buy. The discounted INR amount (minimum ₹1) is fixed when the order is created and used for UPI and LTC quotes. Coupons do not reserve stock or limit uses. UPI must still be verified manually by staff.
+- New orders get a receipt card and appear in private `/shop orders` history. In a paid order ticket, staff can run `/shop delivered` after actual delivery. Old orders are not backfilled; closing an unpaid order marks it cancelled; closing a paid order does not automatically mark it delivered.
+- Owners may rate closed tickets via DM buttons if their DMs are open; `/ticket dashboard` shows closed-ticket claims and aggregate ratings for staff. Only tickets closed after the update are counted.
+- Existing `/vouch give`, `/vouch stats` and `/antiraid set` provide reviews and raid protection.
+- `/backup export` gives administrators a private JSON snapshot of server roles, channels, overwrites and selected settings. It is a reference export, **not automatic restore**; messages, members, secrets and bot data are not included. Store it securely. To back up bot state, separately back up the VPS `data/` directory securely.
+- For privacy, `/shop orders`, `/ticket dashboard` and `/backup export` are slash-only; prefix messages cannot be ephemeral. Other supported commands keep the `!` prefix.
+
+Run mock/unit tests with `node --test tests/premium.test.js`. Live Discord permissions, image attachments and payment flows still require testing in a private test server.

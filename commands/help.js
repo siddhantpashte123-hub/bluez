@@ -61,6 +61,7 @@ const CATEGORIES = [
       ['/automod word <add | remove> <word>', 'Manage the bad-word list. `/automod status` shows everything.'],
       ['/logs set <channel> | off', 'Log deleted/edited messages, joins, leaves and mod actions.'],
       ['/antiraid set <enabled> [min_account_age_days] [join_limit]', 'Kick brand-new accounts and mass joins.'],
+      ['/backup export', 'Privately export roles, channels and selected settings (admin; no automatic restore).'],
     ],
   },
   {
@@ -112,6 +113,8 @@ const CATEGORIES = [
       ['/shop ltc [address]', 'Accept Litecoin in order tickets (checked on the blockchain).'],
       ['/shop add | remove | stock', 'Manage products, prices and stock (admins).'],
       ['/shop products', 'Show all products with price and stock.'],
+      ['/shop coupon | uncoupon', 'Manage expiring, reusable discount codes (admin).'],
+      ['/shop orders | delivered', 'Private order history; staff can mark a paid order delivered.'],
       ['/shop panel [channel]', 'Post the shop with Buy buttons (order ticket + QR, staff marks it paid).'],
       ['/vouch give <stars> <review> | stats | channel', 'Customer reviews with a counter.'],
     ],
@@ -197,6 +200,7 @@ const CATEGORIES = [
     blurb: 'Private support channels at the click of a button.',
     commands: [
       ['/ticket setup [channel] [category] [support_role]', 'Post the ticket panel (Support / Buy / Report buttons).'],
+      ['/ticket dashboard', 'Private staff stats and ticket feedback.'],
       ['/ticket close', 'Close the ticket you are in.'],
       ['/ticket add <user>', 'Add a member to the current ticket.'],
       ['/ticket remove <user>', 'Remove a member from the current ticket.'],

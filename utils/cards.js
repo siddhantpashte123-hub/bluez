@@ -327,4 +327,57 @@ async function rankCard(data) {
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, quality };
+/** Shared premium cards; callers retain embed fallbacks if canvas is unavailable. */
+async function welcomeCard({ username, avatarUrl, server, count }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, '#00e5ff');
+  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 150, 180, 88, '#00e5ff');
+  ctx.fillStyle = '#9caee4'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('A NEW MEMBER HAS ARRIVED', 285, 100);
+  ctx.fillStyle = '#ffffff'; ctx.font = `45px "${FONT.bold}"`; ctx.fillText(fitText(ctx, username, 545), 285, 155);
+  ctx.fillStyle = '#d4d8f5'; ctx.font = `24px "${FONT.regular}"`; ctx.fillText(`Welcome to ${fitText(ctx, server, 405)}`, 285, 200);
+  tile(ctx, 285, 230, 250, 74, 'Member', `#${count}`, '#00e5ff');
+  return canvas.encode('png');
+}
+
+async function leaderboardCard({ server, entries }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, '#ffc94d');
+  ctx.fillStyle = '#ffffff'; ctx.font = `30px "${FONT.bold}"`; ctx.fillText('LEVEL LEADERBOARD', 55, 75);
+  ctx.fillStyle = '#b4c0e5'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(fitText(ctx, server, 280), 55, 101);
+  entries.slice(0, 10).forEach((entry, i) => {
+    const x = i < 5 ? 55 : 460, y = 135 + (i % 5) * 40;
+    ctx.fillStyle = i < 3 ? '#ffc94d' : '#98a8db'; ctx.font = `17px "${FONT.bold}"`; ctx.fillText(`#${i + 1}`, x, y);
+    ctx.fillStyle = '#ffffff'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(fitText(ctx, entry.name, 195), x + 42, y);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#b4c0e5'; ctx.fillText(`${Number(entry.xp).toLocaleString('en-IN')} XP`, x + 365, y); ctx.textAlign = 'left';
+  });
+  return canvas.encode('png');
+}
+
+async function profileCard({ username, avatarUrl, joined, roleCount, level }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, '#9b5cff');
+  drawAvatar(ctx, await loadAvatar(avatarUrl), username, 145, 175, 85, '#9b5cff');
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('MEMBER PROFILE', 280, 95);
+  ctx.fillStyle = '#ffffff'; ctx.font = `40px "${FONT.bold}"`; ctx.fillText(fitText(ctx, username, 550), 280, 150);
+  tile(ctx, 280, 192, 175, 78, 'Joined', joined || 'Unknown', '#00e5ff');
+  tile(ctx, 470, 192, 165, 78, 'Roles', `${roleCount}`, '#ffc94d');
+  tile(ctx, 650, 192, 185, 78, 'Level', `${level}`, '#9b5cff');
+  return canvas.encode('png');
+}
+
+async function orderCard({ number, product, price, status, buyer }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, '#00e5ff');
+  ctx.fillStyle = '#aeb9e5'; ctx.font = `17px "${FONT.semi}"`; ctx.fillText('ORDER RECEIPT', 60, 85);
+  ctx.fillStyle = '#ffffff'; ctx.font = `38px "${FONT.bold}"`; ctx.fillText(fitText(ctx, product, 610), 60, 135);
+  ctx.fillStyle = '#9caee4'; ctx.font = `18px "${FONT.semi}"`; ctx.fillText(`Order #${number}  •  ${fitText(ctx, buyer, 420)}`, 60, 174);
+  tile(ctx, 60, 210, 350, 78, 'Amount', price, '#00e5ff');
+  tile(ctx, 430, 210, 350, 78, 'Status', status, '#ffc94d');
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, quality };

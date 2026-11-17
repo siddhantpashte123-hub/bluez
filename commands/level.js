@@ -137,7 +137,17 @@ module.exports = {
     if (sub === 'leaderboard') {
       if (!board.length) return interaction.reply({ embeds: [embeds.warn(interaction, 'No XP Yet', 'Start chatting to earn XP!')] });
       const own = board.findIndex(([id]) => id === interaction.user.id);
-      return interaction.reply({
+      if (cards.available()) {
+        await interaction.deferReply();
+        const entries = board.slice(0, 10).map(([id, entry]) => ({ name: interaction.guild.members.cache.get(id)?.displayName ?? `User ${id}`, xp: entry.xp }));
+        const png = await cards.leaderboardCard({ server: interaction.guild.name, entries }).catch((err) => (console.error('[Leaderboard] card:', err.message), null));
+        if (png) {
+          try { return await interaction.editReply({ embeds: [embeds.make(interaction, { color: embeds.COLORS.gold, description: `Your rank: **${own < 0 ? 'Unranked' : `#${own + 1}`}**`, image: 'attachment://leaderboard.png', thumbnail: false })], files: [new AttachmentBuilder(png, { name: 'leaderboard.png' })] }); }
+          catch (err) { console.error('[Leaderboard] image send:', err.message); }
+        }
+      }
+      const send = (payload) => interaction.deferred ? interaction.editReply(payload) : interaction.reply(payload);
+      return send({
         embeds: [
           embeds.make(interaction, {
             color: embeds.COLORS.gold,

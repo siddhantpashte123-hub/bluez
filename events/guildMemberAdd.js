@@ -60,7 +60,11 @@ module.exports = {
     if (settings.welcome?.channelId) {
       try {
         const channel = guild.channels.cache.get(settings.welcome.channelId) ?? (await guild.channels.fetch(settings.welcome.channelId));
-        await channel.send(welcome.welcomePayload(member, settings.welcome, invite?.inviterId ?? null));
+        const payload = await welcome.welcomeWithCard(member, settings.welcome, invite?.inviterId ?? null);
+        try { await channel.send(payload); } catch (err) {
+          if (!payload.files) throw err;
+          await channel.send(welcome.welcomePayload(member, settings.welcome, invite?.inviterId ?? null));
+        }
       } catch (err) {
         console.error('[Welcome]', err.message);
       }

@@ -356,9 +356,22 @@ async function confirmClose(interaction) {
     components: [],
   });
 
+  db.updateGuild('orders', guild.id, (store) => {
+    const order = store.items?.[channel.id];
+    if (order?.status === 'pending') { order.status = 'cancelled'; order.closedAt = Date.now(); }
+  });
+  db.updateGuild('ticketfeedback', guild.id, (store) => {
+    (store.closed ??= {})[channel.id] = { userId: ticket.userId, claimedBy: ticket.claimedBy ?? null, closedAt: Date.now(), rating: null };
+  });
   db.update('tickets', (data) => {
     delete data[guild.id]?.tickets?.[channel.id];
   });
+  const owner = await interaction.client.users.fetch(ticket.userId).catch(() => null);
+  if (owner) {
+    const row = new ActionRowBuilder().addComponents([1, 2, 3, 4, 5].map((n) =>
+      new ButtonBuilder().setCustomId(`ticket_rating_${guild.id}_${channel.id}_${n}`).setLabel(`${n} ⭐`).setStyle(ButtonStyle.Secondary)));
+    await owner.send({ content: `How was your ticket #${ticket.number} in **${guild.name}**? Choose a rating from 1 to 5.`, components: [row], allowedMentions: { parse: [] } }).catch(() => {});
+  }
 
   // Save a transcript before the channel disappears (DM to the owner + log channel).
   await saveTranscript(interaction, ticket).catch((err) => console.error('[Ticket] transcript failed:', err.message));
@@ -388,6 +401,14 @@ async function claimTicket(interaction) {
 
 /** Router for every "ticket_*" button (called from events/interactionCreate.js). */
 async function handleButton(interaction) {
+  if (interaction.customId.startsWith('ticket_rating_')) {
+    const match = /^ticket_rating_(\d{16,20})_(\d{16,20})_([1-5])$/.exec(interaction.customId);
+    const record = match && db.guild('ticketfeedback', match[1]).closed?.[match[2]];
+    if (!record || record.userId !== interaction.user.id) return interaction.reply(ephemeral(embeds.error(interaction, 'Not Allowed', 'Only the ticket owner can rate this ticket.')));
+    if (record.rating) return interaction.reply(ephemeral(embeds.warn(interaction, 'Already Rated', 'You already rated this ticket.')));
+    db.updateGuild('ticketfeedback', match[1], (store) => { store.closed[match[2]].rating = Number(match[3]); });
+    return interaction.update({ content: `Thank you! Your ticket rating: ${match[3]} / 5 ⭐`, components: [], embeds: [] });
+  }
   switch (interaction.customId) {
     case 'ticket_open':
     case 'ticket_open_buy':
@@ -438,6 +459,7 @@ module.exports = {
         .addStringOption((o) => o.setName('description').setDescription('Panel text').setMaxLength(1500)),
     )
     .addSubcommand((sub) => sub.setName('close').setDescription('🔒 Close the ticket you are in.'))
+    .addSubcommand((sub) => sub.setName('dashboard').setDescription('📊 Ticket claims and feedback (staff).'))
     .addSubcommand((sub) =>
       sub
         .setName('add')
@@ -454,6 +476,20 @@ module.exports = {
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     const { guild } = interaction;
+
+    if (sub === 'dashboard') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use the Slash Command', 'For privacy, use `/ticket dashboard`.')] });
+      if (!isStaff(interaction.member, configOf(guild.id))) return interaction.reply(ephemeral(embeds.error(interaction, 'Staff Only', 'Only the support team can see ticket statistics.')));
+      const records = Object.values(db.guild('ticketfeedback', guild.id).closed ?? {});
+      const rated = records.filter((record) => record.rating);
+      const claims = {};
+      for (const record of records) if (record.claimedBy) claims[record.claimedBy] = (claims[record.claimedBy] ?? 0) + 1;
+      const top = Object.entries(claims).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, count]) => `<@${id}> — **${count}**`).join('\n') || '*No claims recorded yet.*';
+      const avg = rated.length ? (rated.reduce((sum, record) => sum + record.rating, 0) / rated.length).toFixed(1) : '—';
+      return interaction.reply({ ...ephemeral(embeds.make(interaction, { color: embeds.COLORS.blurple, title: '📊 Staff Dashboard', description: 'Statistics from tickets closed since this update.', fields: [
+        { name: 'Closed tickets', value: `${records.length}`, inline: true }, { name: 'Ratings', value: `${rated.length}`, inline: true }, { name: 'Average rating', value: `${avg} / 5`, inline: true }, { name: 'Claimed tickets', value: top },
+      ] })), allowedMentions: { parse: [] } });
+    }
 
     /* ---------- /ticket setup ---------- */
     if (sub === 'setup') {
