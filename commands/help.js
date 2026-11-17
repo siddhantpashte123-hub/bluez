@@ -62,6 +62,7 @@ const CATEGORIES = [
       ['/logs set <channel> | off', 'Log deleted/edited messages, joins, leaves and mod actions.'],
       ['/antiraid set <enabled> [min_account_age_days] [join_limit]', 'Kick brand-new accounts and mass joins.'],
       ['/backup export | restore', 'Snapshot export and confirmed safe skeleton restore (admin).'],
+      ['/server backup | /backup upload', 'Private channel backup code and confirmed destructive replacement (admin).'],
       ['/audit', 'View supported bot setting changes (admin).'],
       ['/branding set | reset', 'Customize the bot look for this server.'],
     ],
