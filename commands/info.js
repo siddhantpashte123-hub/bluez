@@ -7,6 +7,7 @@ const embeds = require('../utils/embeds');
 const cards = require('../utils/cards');
 const branding = require('../utils/branding');
 const db = require('../utils/db');
+const { sendCard } = require('../utils/card-response');
 
 function uptime(ms) {
   const s = Math.floor(ms / 1000);
@@ -72,22 +73,34 @@ module.exports = {
     }
 
     if (sub === 'bot') {
-      return interaction.reply({
-        embeds: [
-          embeds.make(interaction, {
-            color: embeds.COLORS.blurple,
-            title: `${embeds.e('bow')} ${client.user.username}`,
-            fields: [
-              { name: '🏠 Servers', value: `${client.guilds.cache.size}`, inline: true },
-              { name: '🧩 Commands', value: `${client.commands?.size ?? 0}`, inline: true },
-              { name: '⏱️ Uptime', value: uptime(client.uptime ?? 0), inline: true },
-              { name: '💾 Memory', value: `${Math.round(process.memoryUsage().rss / 1048576)} MB`, inline: true },
-              { name: '🟢 Node.js', value: process.version, inline: true },
-              { name: '📚 discord.js', value: `v${djsVersion}`, inline: true },
-            ],
-          }),
+      const stats = {
+        botName: client.user.username,
+        servers: client.guilds.cache.size,
+        commands: client.commands?.size ?? 0,
+        uptime: uptime(client.uptime ?? 0),
+        memory: `${Math.round(process.memoryUsage().rss / 1048576)} MB`,
+        nodeVersion: process.version,
+        discordVersion: `v${djsVersion}`,
+      };
+      const embed = embeds.make(interaction, {
+        color: embeds.COLORS.blurple,
+        title: `${embeds.e('bow')} ${stats.botName}`,
+        fields: [
+          { name: '🏠 Servers', value: `${stats.servers}`, inline: true },
+          { name: '🧩 Commands', value: `${stats.commands}`, inline: true },
+          { name: '⏱️ Uptime', value: stats.uptime, inline: true },
+          { name: '💾 Memory', value: stats.memory, inline: true },
+          { name: '🟢 Node.js', value: stats.nodeVersion, inline: true },
+          { name: '📚 discord.js', value: stats.discordVersion, inline: true },
         ],
       });
+      let png = null;
+      if (cards.available()) {
+        await interaction.deferReply();
+        png = await cards.botInfoCard({ ...stats, avatarUrl: client.user.displayAvatarURL({ extension: 'png', forceStatic: true, size: 256 }), accent: branding.accent(guild.id) })
+          .catch((err) => (console.error('[/info bot] card:', err.message), null));
+      }
+      return sendCard(interaction, embed, png, 'bot-info.png');
     }
 
     // server

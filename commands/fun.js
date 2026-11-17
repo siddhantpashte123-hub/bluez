@@ -3,6 +3,9 @@
  */
 const { SlashCommandBuilder, InteractionContextType } = require('discord.js');
 const embeds = require('../utils/embeds');
+const cards = require('../utils/cards');
+const branding = require('../utils/branding');
+const { sendCard } = require('../utils/card-response');
 
 const ANSWERS = ['Yes, definitely.', 'Without a doubt.', 'Most likely.', 'Signs point to yes.', 'Ask again later.', 'I am not sure.', 'Better not tell you now.', 'Do not count on it.', 'My sources say no.', 'Very doubtful.'];
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -22,7 +25,17 @@ module.exports = {
     const reply = (title, description, color = embeds.COLORS.purple) => interaction.reply({ embeds: [embeds.make(interaction, { color, title, description })] });
 
     if (sub === '8ball') return reply('🎱 Magic 8-Ball', `**Q:** ${interaction.options.getString('question', true)}\n**A:** ${pick(ANSWERS)}`);
-    if (sub === 'coinflip') return reply('🪙 Coin Flip', `It landed on **${pick(['Heads', 'Tails'])}**!`, embeds.COLORS.gold);
+    if (sub === 'coinflip') {
+      const result = pick(['Heads', 'Tails']);
+      const embed = embeds.make(interaction, { color: embeds.COLORS.gold, title: '🪙 Coin Flip', description: `It landed on **${result}**!` });
+      let png = null;
+      if (cards.available()) {
+        await interaction.deferReply();
+        png = await cards.coinFlipCard({ result, username: interaction.member?.displayName ?? interaction.user.username, accent: branding.accent(interaction.guildId ?? interaction.guild.id) })
+          .catch((err) => (console.error('[/fun coinflip] card:', err.message), null));
+      }
+      return sendCard(interaction, embed, png, 'coinflip.png');
+    }
     if (sub === 'dice') {
       const sides = interaction.options.getInteger('sides') ?? 6;
       return reply('🎲 Dice Roll', `You rolled **${1 + Math.floor(Math.random() * sides)}** (1-${sides}).`, embeds.COLORS.cyan);
