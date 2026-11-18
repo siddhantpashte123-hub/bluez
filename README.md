@@ -369,3 +369,12 @@ Run mock/unit tests with `node --test tests/premium.test.js`. Live Discord permi
 - Sensitive views, notes, availability and backups require slash commands because ordinary prefix replies cannot be ephemeral. The bot still supports `!` for other commands.
 
 Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and restore flows require testing in a dedicated test server.
+
+
+## Fun cards and operational tools
+
+- `/fun dice [sides]` and `/fun 8ball question:...` now include premium image cards when canvas is available; normal embeds remain as fallback. Both also support the `!` prefix.
+- `/shop product product:<name or ID>` shows a product detail card, with an embed fallback. `/shop search` searches tracked orders by number, customer and/or status. Search is slash-only, private to authorized support staff, excludes the caller's own orders, and shows at most ten matches. Search results do not include private notes.
+- `/ticket summary` privately shows the current ticket owner, type, priority, claim and tracked order status to that ticket's support staff, excluding its owner. It is slash-only. Legacy tickets may show an unknown type.
+- `/health` provides an administrator-only, slash-only private view of uptime, gateway latency, process memory, filesystem access and available space. These are local checks, not a guarantee that writes or other bot features work.
+- When a giveaway ends with winners, the existing claim announcement includes an optional winner card; if generation or sending fails, it falls back to the original announcement with winner mentions and the claim button. No-winner announcements remain text-only.

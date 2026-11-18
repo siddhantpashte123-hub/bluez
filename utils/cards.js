@@ -485,4 +485,22 @@ async function coinFlipCard({ result, username, accent = '#ffc94d' }) {
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, quality };
+/** Generic premium result cards; full text remains available in the accompanying embed. */
+async function featureCard({ eyebrow, title, detail, badge, footer, accent = '#5865f2' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+  ctx.save(); ctx.shadowColor = `${accent}88`; ctx.shadowBlur = 26;
+  roundRect(ctx, 62, 74, 152, 152, 38); ctx.fillStyle = accent; ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `42px "${FONT.bold}"`;
+  ctx.fillText(fitText(ctx, String(badge ?? '★'), 122), 138, 150);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#aebef5'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText(fitText(ctx, String(eyebrow).toUpperCase(), 610), 250, 92);
+  ctx.fillStyle = '#ffffff'; ctx.font = `40px "${FONT.bold}"`; ctx.fillText(fitText(ctx, String(title), 590), 250, 153);
+  ctx.fillStyle = '#c6d0ee'; ctx.font = `21px "${FONT.regular}"`; ctx.fillText(fitText(ctx, String(detail), 590), 250, 198);
+  roundRect(ctx, 250, 238, 580, 53, 15); ctx.fillStyle = 'rgba(5,8,24,0.48)'; ctx.fill();
+  ctx.fillStyle = '#dce5ff'; ctx.font = `16px "${FONT.semi}"`; ctx.fillText(fitText(ctx, String(footer), 540), 270, 271);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, quality };

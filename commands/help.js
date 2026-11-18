@@ -64,6 +64,7 @@ const CATEGORIES = [
       ['/backup export | restore', 'Snapshot export and confirmed safe skeleton restore (admin).'],
       ['/server backup | /backup upload', 'Private channel backup code and confirmed destructive replacement (admin).'],
       ['/audit', 'View supported bot setting changes (admin).'],
+      ['/health', 'Private bot uptime, latency and local storage checks (admin).'],
       ['/branding set | reset', 'Customize the bot look for this server.'],
     ],
   },
@@ -118,6 +119,7 @@ const CATEGORIES = [
       ['/shop products', 'Show all products with price and stock.'],
       ['/shop coupon | uncoupon', 'Manage expiring, reusable discount codes (admin).'],
       ['/shop orders | delivered', 'Private order history; staff can mark a paid order delivered.'],
+      ['/shop product | search', 'Product details and private staff order search.'],
       ['/shop dashboard | couponstats | notes', 'Private sales and coupon statistics (admin).'],
       ['/shop category', 'Assign a product category (admin).'],
       ['/shop panel [channel]', 'Post the shop with Buy buttons (order ticket + QR, staff marks it paid).'],
@@ -206,6 +208,7 @@ const CATEGORIES = [
     commands: [
       ['/ticket setup [channel] [category] [support_role]', 'Post the ticket panel (Support / Buy / Report buttons).'],
       ['/ticket dashboard', 'Private staff stats and ticket feedback.'],
+      ['/ticket summary', 'Private summary of the current ticket for support staff.'],
       ['/ticket category | inactivity | priority | note', 'Configure ticket types, reminders, priority and private order notes.'],
       ['/staff status | list', 'Set and view support availability.'],
       ['/ticket close', 'Close the ticket you are in.'],

@@ -30,6 +30,7 @@ const ltc = require('../utils/ltc');
 const cards = require('../utils/cards');
 const branding = require('../utils/branding');
 const audit = require('../utils/audit');
+const { sendCard } = require('../utils/card-response');
 
 /** An LTC payment may be up to 1% short (wallet fees / rounding) and still count. */
 const LTC_TOLERANCE = 0.99;
@@ -362,6 +363,11 @@ module.exports = {
         .addIntegerOption((o) => o.setName('amount').setDescription('New stock (-1 = unlimited)').setRequired(true).setMinValue(-1).setMaxValue(100000)),
     )
     .addSubcommand((s) => s.setName('products').setDescription('🛍️ Show all products with price and stock.'))
+    .addSubcommand((s) => s.setName('product').setDescription('Show a product detail card.').addStringOption(productOpt))
+    .addSubcommand((s) => s.setName('search').setDescription('Privately search tracked orders (staff).')
+      .addIntegerOption((o) => o.setName('number').setDescription('Order number').setMinValue(1))
+      .addUserOption((o) => o.setName('customer').setDescription('Customer'))
+      .addStringOption((o) => o.setName('status').setDescription('Order status').addChoices(...['pending', 'paid', 'delivered', 'cancelled'].map(value => ({ name: value, value })))) )
     .addSubcommand((s) => s.setName('category').setDescription('Assign a product category (admin).').addStringOption(productOpt)
       .addStringOption((o) => o.setName('name').setDescription('Category name; use Uncategorized to clear').setRequired(true).setMinLength(1).setMaxLength(30)))
     .addSubcommand((s) => s.setName('dashboard').setDescription('Private sales dashboard (admin).'))
@@ -387,6 +393,28 @@ module.exports = {
     const fail = (title, text) => interaction.reply(embeds.ephemeral(embeds.error(interaction, title, text)));
 
     if (sub === 'products') return interaction.reply({ embeds: [productsEmbed(interaction, guild)] });
+    if (sub === 'product') {
+      const found = findProduct(guild.id, interaction.options.getString('product', true));
+      if (!found) return fail('Product Not Found', 'Check `/shop products`.');
+      const [, product] = found;
+      const embed = embeds.make(interaction, { title: `🛍️ ${product.name}`, color: embeds.COLORS.cyan, description: product.description || 'No description.', fields: [{ name: 'Price', value: rupees(product.price), inline: true }, { name: 'Stock', value: stockText(product.stock), inline: true }, { name: 'Category', value: product.category || 'Uncategorized', inline: true }], thumbnail: false });
+      let png = null;
+      if (cards.available()) {
+        await interaction.deferReply();
+        png = await cards.featureCard({ eyebrow: 'Product details', title: product.name, detail: product.description || 'Available in our shop', badge: 'SHOP', footer: `${rupees(product.price)} • ${product.stock < 0 ? 'Unlimited stock' : `${product.stock} in stock`}`, accent: branding.accent(guild.id) }).catch(() => null);
+      }
+      return sendCard(interaction, embed, png, 'product.png');
+    }
+    if (sub === 'search') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use Slash Command', 'For privacy, use `/shop search`.')] });
+      if (!tickets.isStaff(interaction.member, tickets.configOf(guild.id))) return fail('Staff Only', 'Only the support team can search orders.');
+      const number = interaction.options.getInteger('number'), customer = interaction.options.getUser('customer'), status = interaction.options.getString('status');
+      if (!number && !customer && !status) return fail('Filter Required', 'Provide a number, customer or status.');
+      const items = Object.entries(db.guild('orders', guild.id).items ?? {}).filter(([channelId, o]) => o.userId !== interaction.user.id && tickets.isStaff(interaction.member, tickets.configOf(guild.id), db.guild('tickets', guild.id).tickets?.[channelId]) && (!number || o.number === number) && (!customer || o.userId === customer.id) && (!status || o.status === status)).sort((a,b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+      const text = items.slice(0, 10).map(([channelId, o]) => `**#${o.number}** • ${String(o.product).slice(0, 60)} • ${rupees(o.price)}\n${o.status} • <@${o.userId}> • <#${channelId}>`).join('\n\n') || 'No matching orders.';
+      return interaction.reply({ ...embeds.ephemeral(embeds.make(interaction, { title: '🔍 Order Search', description: `${text}\n\nShowing ${Math.min(items.length, 10)} of ${items.length} matches. Your own orders are excluded.` })), allowedMentions: { parse: [] } });
+    }
+
     if (sub === 'orders') {
       if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use the Slash Command', 'For privacy, use `/shop orders`.')] });
       const items = Object.entries(db.guild('orders', guild.id).items ?? {}).filter(([, order]) => order.userId === interaction.user.id).sort((a, b) => b[1].createdAt - a[1].createdAt).slice(0, 10);
