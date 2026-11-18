@@ -503,4 +503,58 @@ async function featureCard({ eyebrow, title, detail, badge, footer, accent = '#5
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, quality };
+/** Calculator card; the expression and result are supplied from the command's single evaluation. */
+async function calculatorCard({ expression, result, accent = '#00e5ff' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(W, H), ctx = canvas.getContext('2d');
+  background(ctx, accent);
+
+  ctx.fillStyle = '#a4b6e9'; ctx.font = `14px "${FONT.semi}"`;
+  ctx.fillText('B L U E Z   /   U T I L I T Y', 55, 68);
+  ctx.fillStyle = '#ffffff'; ctx.font = `35px "${FONT.bold}"`;
+  ctx.fillText('Calculator', 55, 112);
+
+  // Expression panel wraps at character boundaries and scales down if needed.
+  roundRect(ctx, 52, 132, 558, 104, 18); ctx.fillStyle = 'rgba(7,11,31,0.72)'; ctx.fill();
+  ctx.fillStyle = '#8fa4d5'; ctx.font = `12px "${FONT.semi}"`; ctx.fillText('EXPRESSION', 72, 155);
+  const text = clean(String(expression).replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–]/g, '-'));
+  const wrap = (value, width) => {
+    const lines = []; let line = '';
+    for (const ch of value) {
+      if (line && ctx.measureText(line + ch).width > width) { lines.push(line); line = ''; }
+      line += ch;
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+  let lines = [], size = 22;
+  for (; size >= 15; size--) {
+    ctx.font = `${size}px "${FONT.semi}"`;
+    lines = wrap(text, 515);
+    if (lines.length <= 3) break;
+  }
+  // Use the full text embed rather than an unreadably small image for long expressions.
+  if (lines.length > 3) throw new Error('Expression is too long to render clearly');
+  ctx.fillStyle = '#d9e5ff';
+  const step = Math.min(25, size + 4);
+  lines.forEach((line, i) => ctx.fillText(line, 72, 177 + i * step));
+
+  roundRect(ctx, 52, 250, 558, 66, 18); ctx.fillStyle = 'rgba(0,229,255,0.10)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,229,255,0.32)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#9fdce8'; ctx.font = `12px "${FONT.semi}"`; ctx.fillText('RESULT', 72, 272);
+  ctx.fillStyle = '#ffffff'; ctx.font = `29px "${FONT.bold}"`; ctx.fillText(fitText(ctx, result, 510), 72, 301);
+
+  // Decorative calculator, with no external assets or fonts required.
+  ctx.save(); ctx.shadowColor = `${accent}66`; ctx.shadowBlur = 24;
+  roundRect(ctx, 672, 63, 152, 232, 26); ctx.fillStyle = 'rgba(12,19,45,0.95)'; ctx.fill(); ctx.restore();
+  roundRect(ctx, 672, 63, 152, 232, 26); ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 2; ctx.stroke();
+  roundRect(ctx, 690, 82, 116, 49, 10); ctx.fillStyle = 'rgba(0,229,255,0.13)'; ctx.fill();
+  ctx.fillStyle = '#8beefe'; ctx.textAlign = 'right'; ctx.font = `25px "${FONT.bold}"`; ctx.fillText('=', 790, 116); ctx.textAlign = 'left';
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 3; col++) {
+    roundRect(ctx, 690 + col * 40, 145 + row * 34, 31, 25, 7);
+    ctx.fillStyle = row === 3 && col === 2 ? accent : 'rgba(255,255,255,0.12)'; ctx.fill();
+  }
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, quality };
