@@ -6,11 +6,13 @@
  */
 const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder } = require('discord.js');
 const embeds = require('../utils/embeds');
+const QRCode = require('qrcode');
 const settings = require('../utils/upi-settings');
 
 const SPLIT_ABOVE = 2000; // ₹ – anything above this is split
 const MAX_AMOUNT = 50000; // ₹ – keeps the number of QR codes sensible (max 26)
 const EMBEDS_PER_MESSAGE = 10; // Discord's hard limit
+const QR_WIDTH = 640; // crisp, larger QR with a four-module quiet zone
 
 /** @omkarbhosale/upiqr is an ES module, so it is loaded with import() once. */
 let upiqrModule;
@@ -37,6 +39,10 @@ const dataUrlToBuffer = (dataUrl) => Buffer.from(dataUrl.slice(dataUrl.indexOf('
  * Throws when the UPI ID or amount is invalid.
  */
 async function buildQrPayloads(ctx, upiId, amount, name, note = '') {
+  // Match the payment library's trimming so the displayed link and fallback QR agree.
+  if (typeof upiId === 'string') upiId = upiId.trim();
+  if (typeof name === 'string') name = name.trim();
+  if (typeof note === 'string') note = note.trim();
   const { generateQR, splitTransactionQR } = await loadUpiqr();
   const parts =
     amount > SPLIT_ABOVE
@@ -44,7 +50,7 @@ async function buildQrPayloads(ctx, upiId, amount, name, note = '') {
       : [{ amount, image: await generateQR({ UPI_ID: upiId, AMOUNT: amount, name, note }) }];
 
   const total = parts.length;
-  const items = parts.map((part, i) => {
+  const items = await Promise.all(parts.map(async (part, i) => {
     const fileName = `upi-qr-${i + 1}.png`;
     const partNote = note && total > 1 ? `${note} (Part ${i + 1}/${total})` : note;
     const link = upiLink(upiId, part.amount, name, partNote);
@@ -52,28 +58,45 @@ async function buildQrPayloads(ctx, upiId, amount, name, note = '') {
       color: embeds.COLORS.cyan,
       title: total > 1 ? `💸 UPI Payment — QR ${i + 1} of ${total}` : '💸 UPI Payment QR',
       description:
-        total > 1 && i === 0
-          ? `The total of **${rupees(amount)}** is above ${rupees(SPLIT_ABOVE)}, so it was split into **${total}** payments. Please scan **every** QR code.`
-          : 'Scan this QR code with any UPI app (GPay, PhonePe, Paytm, BHIM…).',
+        `### ${rupees(part.amount)}\n` +
+        (total > 1 && i === 0
+          ? `The total of **${rupees(amount)}** is above ${rupees(SPLIT_ABOVE)}, so it was split into **${total}** payments. Please scan **every** QR code.\n\n`
+          : '') +
+        'Scan with GPay, PhonePe, Paytm or another UPI app.\n**Check the recipient and amount in your UPI app before paying.**',
       fields: [
         { name: '🏦 UPI ID', value: `\`${upiId}\``, inline: true },
         { name: '💰 Amount', value: `**${rupees(part.amount)}**`, inline: true },
         { name: '👤 Payee Name', value: name || 'Not specified', inline: true },
         ...(partNote ? [{ name: '📝 Payment Note', value: partNote }] : []),
-        { name: '📲 Pay Now (UPI link)', value: `\`\`\`${link}\`\`\`` },
+        { name: '📲 Pay Now (UPI link)', value: link.length <= 1018 ? `\`\`\`${link}\`\`\`` : 'Link is too long to display; scan the QR instead.' },
       ],
       image: `attachment://${fileName}`,
       thumbnail: false,
-      footer: total > 1 ? `Part ${i + 1}/${total} • Total ${rupees(amount)}` : 'Open the link on a phone to pay',
+      footer: total > 1 ? `Part ${i + 1}/${total} • Total ${rupees(amount)} • Check every payment` : 'Verify the recipient before paying',
     });
-    return { embed, file: new AttachmentBuilder(dataUrlToBuffer(part.image), { name: fileName }) };
-  });
+    // Encode the same exact UPI URI shown in the embed. Keep a clean white quiet
+    // zone and high contrast; no logo or artwork should obscure the QR modules.
+    let image;
+    try {
+      image = await QRCode.toBuffer(link, { width: QR_WIDTH, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#00385EFF', light: '#FFFFFFFF' } });
+    } catch (err) {
+      console.warn('[UPI QR] High-resolution rendering failed; using original QR:', err.message);
+      image = dataUrlToBuffer(part.image);
+    }
+    return { embed, file: new AttachmentBuilder(image, { name: fileName }) };
+  }));
 
+  // Discord limits both the embed count and total text across a message.
   const payloads = [];
-  for (let i = 0; i < items.length; i += EMBEDS_PER_MESSAGE) {
-    const chunk = items.slice(i, i + EMBEDS_PER_MESSAGE);
-    payloads.push({ embeds: chunk.map((c) => c.embed), files: chunk.map((c) => c.file) });
+  let chunk = [], characters = 0;
+  for (const item of items) {
+    if (chunk.length && (chunk.length >= EMBEDS_PER_MESSAGE || characters + item.embed.length > 6000)) {
+      payloads.push({ embeds: chunk.map(c => c.embed), files: chunk.map(c => c.file) });
+      chunk = []; characters = 0;
+    }
+    chunk.push(item); characters += item.embed.length;
   }
+  if (chunk.length) payloads.push({ embeds: chunk.map(c => c.embed), files: chunk.map(c => c.file) });
   return payloads;
 }
 
