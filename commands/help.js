@@ -132,7 +132,8 @@ const CATEGORIES = [
     color: embeds.COLORS.cyan,
     blurb: 'Handy everyday tools.',
     commands: [
-      ['/upiqr <upi_id> <amount> <name>', 'Generate a UPI payment QR (auto-splits above ₹2,000).'],
+      ['/upiset <upi_id> [name]', 'Save your UPI ID for this server.'],
+      ['/upiqr <amount> [upi_id] [name]', 'Generate a UPI QR using your saved ID (auto-splits above ₹2,000).'],
       ['/ltc qr <address> <amount> [currency]', 'Litecoin payment QR at the live rate. Also `/ltc price`, `/ltc check <txid>`.'],
       ['/calc <expression>', 'Calculator, e.g. `1999 * 3 + 18%`.'],
       ['/afk <reason>', 'Set your AFK status. I will tell people who ping you.'],
