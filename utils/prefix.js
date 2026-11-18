@@ -310,7 +310,20 @@ async function handle(message) {
 
   let values;
   try {
-    values = await parseOptions(options, tokens.slice(index), message, path);
+    let args = tokens.slice(index);
+    // Keep the optional payee name separate from the required UPI ID.
+    if (path === 'upiset' && args.length > 1 && !args[0].text.includes(':')) {
+      args = [{ text: `upi_id:${args[0].text}`, quoted: false }, { text: `name:${args.slice(1).map(a => a.text).join(' ')}`, quoted: false }];
+    }
+    // Preserve the old positional !upiqr <upi_id> <amount> <name> syntax.
+    if (path === 'upiqr' && args.length >= 2 && args[0].text.includes('@') && !args[0].text.includes(':') && /^[+-]?(\d+\.?\d*|\.\d+)$/.test(args[1].text)) {
+      args = [args[1], args[0], ...args.slice(2)];
+    }
+    // Legacy multi-word payee names remain one field; payment notes use named options.
+    if (path === 'upiqr' && args.length >= 3 && !args.some(a => !a.quoted && /^(amount|upi_id|name|note):/.test(a.text))) {
+      args = [{ text: `amount:${args[0].text}` }, { text: `upi_id:${args[1].text}` }, { text: `name:${args.slice(2).map(a => a.text).join(' ')}` }];
+    }
+    values = await parseOptions(options, args, message, path);
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
     const details = options.map((o) => `\`${o.name}\` ${o.required ? '' : '*(optional)* '}— ${o.description}`).join('\n');

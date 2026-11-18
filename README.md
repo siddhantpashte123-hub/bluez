@@ -29,7 +29,7 @@ cd ~ && (command -v git >/dev/null || { if [ "$(id -u)" -eq 0 ]; then apt-get up
 | | `/channel rename <new_name>` | Rename the current channel (needs **Manage Channels**) |
 | | `/dm <user> <message>` | DM one member through the bot (needs **Manage Server**) |
 | | `/dmall <message>` | DM every member with a live progress embed (needs **Administrator**) |
-| 🧰 Utility | `/upiqr <upi_id> <amount> <name>` | UPI payment QR. Amounts above ₹2,000 are split into several QR codes |
+| 🧰 Utility | `/upiset <upi_id> [name]` → `/upiqr <amount>` | Save your UPI ID and generate payment QR codes. Amounts above ₹2,000 are split |
 | | `/afk <reason>` | Set AFK. The bot replies when you are pinged and clears AFK when you talk |
 | 🔊 Voice | `/247 vc join <voice_channel>` | Join a voice channel and stay there 24/7 with auto-reconnect |
 | | `/247 vc stop` | Leave and turn 24/7 mode off |
@@ -322,6 +322,7 @@ The bot uses five custom emojis (tick, caution, two gifts, bow). Their IDs are l
 - **`/24/7 vc` is typed as `/247 vc join` and `/247 vc stop`.** Discord does not allow `/` or spaces inside a command name, and a command cannot have a channel option and a subcommand at the same level.
 - **24/7 voice** plays a looped silent track. With Node.js 22.12+ and a working `ffmpeg-static` binary it uses `discord-audio-stream`; otherwise it falls back automatically to a built-in silent Opus stream from `@discordjs/voice`. Saved channels are rejoined on startup, on disconnect, and by a 60-second watchdog.
 - **`/dmall`** sends one DM every 1.5 seconds and skips bots. Members with closed DMs are counted as failed. Discord treats unsolicited mass DMs as spam and can quarantine or ban bots that abuse this, so use it only for real announcements in your own server.
+- **Saved UPI QR:** Run `/upiset upi_id:name@bank` once, then `/upiqr amount:499`. Your ID is saved separately for each user and server in `data/upi-settings.json`; it does not change the shop's `/shop setup`. Optional `name` sets a payee label; setting a new ID without a name clears the old label. Use `/upiqr amount:499 upi_id:other@bank name:Name` for a one-time override; an overridden ID never inherits your saved name. `!upiset name@bank`, `!upiqr 499` and the old `!upiqr name@bank 499 Name` also work, but prefix commands are public. QR replies display the UPI ID publicly; verify the beneficiary in your UPI app. Keep the data folder secure and transfer it during VPS migration. The saved ID does not verify ownership or payment.
 - **`/upiqr`**: Discord embeds cannot make `upi://` links clickable, so the "Pay Now" link is shown as copyable text next to the QR code. Maximum amount is ₹50,000 per command.
 - **`/invites`** needs the bot to have **Manage Server** to read invite links. Counts are saved in `data/invites.json`, so they survive deleted or expired links.
 - **`/channel rename`**: Discord allows only 2 renames per channel every 10 minutes.
@@ -369,3 +370,22 @@ Run mock/unit tests with `node --test tests/premium.test.js`. Live Discord permi
 - Sensitive views, notes, availability and backups require slash commands because ordinary prefix replies cannot be ephemeral. The bot still supports `!` for other commands.
 
 Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and restore flows require testing in a dedicated test server.
+
+
+## Fun cards and operational tools
+
+- `/fun dice [sides]` and `/fun 8ball question:...` now include premium image cards when canvas is available; normal embeds remain as fallback. Both also support the `!` prefix.
+- `/shop product product:<name or ID>` shows a product detail card, with an embed fallback. `/shop search` searches tracked orders by number, customer and/or status. Search is slash-only, private to authorized support staff, excludes the caller's own orders, and shows at most ten matches. Search results do not include private notes.
+- `/ticket summary` privately shows the current ticket owner, type, priority, claim and tracked order status to that ticket's support staff, excluding its owner. It is slash-only. Legacy tickets may show an unknown type.
+- `/health` provides an administrator-only, slash-only private view of uptime, gateway latency, process memory, filesystem access and available space. These are local checks, not a guarantee that writes or other bot features work.
+- When a giveaway ends with winners, the existing claim announcement includes an optional winner card; if generation or sending fails, it falls back to the original announcement with winner mentions and the claim button. No-winner announcements remain text-only.
+
+
+## UPI notes, FAQs and support templates
+
+- `/upiclear` removes only your own saved UPI ID and payee name for the current server; it does not change `/shop setup` or delete previously posted QR messages. `!upiclear` works too.
+- `/upiqr amount:499 note:Order 25` adds an optional, **public** note (max 85 characters) to both the UPI link and QR. Split payments append their part number to the note in both. UPI apps may display or handle notes differently. Never include private data. For prefix, use named options, for example `!upiqr amount:499 note:Order 25`.
+- `/faq set key:delivery answer:Your public answer` and `/faq remove key:delivery` require Manage Server. Everyone can use `/faq list` and `/faq view key:delivery`. FAQs are public, max 40 per server, and keys use letters, numbers, underscores or hyphens.
+- `/quickreply set key:hello text:Hello!` and `/quickreply remove key:hello` require Manage Server. Inside a tracked ticket, authorized ticket staff can use private `/quickreply list` and public `/quickreply send key:hello`. Text is visible to everyone in the ticket, with mentions disabled; never store secrets. Ticket owners cannot use staff quick replies, even if they are staff. The `!` prefix supports set/remove/send, but prefix messages and their arguments are public; list is slash-only.
+- `/shop style color:#5865F2 label:My Shop` customizes `/shop product` cards and their embed fallback. Manage Server permission is required. `/shop style reset:true` restores defaults. Other shop panels and cards are not affected.
+- FAQ and quick reply data use `data/faq.json` and `data/quickreplies.json`; include them when backing up or migrating the bot's `data/` directory.

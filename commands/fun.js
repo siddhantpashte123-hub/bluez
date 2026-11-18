@@ -25,7 +25,16 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
     const reply = (title, description, color = embeds.COLORS.purple) => interaction.reply({ embeds: [embeds.make(interaction, { color, title, description })] });
 
-    if (sub === '8ball') return reply('🎱 Magic 8-Ball', `**Q:** ${interaction.options.getString('question', true)}\n**A:** ${pick(ANSWERS)}`);
+    if (sub === '8ball') {
+      const question = interaction.options.getString('question', true), answer = pick(ANSWERS);
+      const embed = embeds.make(interaction, { color: embeds.COLORS.purple, title: '🎱 Magic 8-Ball', description: `**Q:** ${question}\n**A:** ${answer}`, thumbnail: false });
+      let png = null;
+      if (cards.available()) {
+        await interaction.deferReply();
+        png = await cards.featureCard({ eyebrow: 'Magic 8-Ball', title: answer, detail: question, badge: '8', footer: `Asked by ${interaction.member?.displayName ?? interaction.user.username}`, accent: branding.accent(interaction.guildId ?? interaction.guild.id) }).catch(() => null);
+      }
+      return sendCard(interaction, embed, png, '8ball.png');
+    }
     if (sub === 'coinflip') {
       // One unbiased, independent draw per command; repeats are possible.
       const result = crypto.randomInt(2) === 0 ? 'Heads' : 'Tails';
@@ -40,7 +49,14 @@ module.exports = {
     }
     if (sub === 'dice') {
       const sides = interaction.options.getInteger('sides') ?? 6;
-      return reply('🎲 Dice Roll', `You rolled **${1 + Math.floor(Math.random() * sides)}** (1-${sides}).`, embeds.COLORS.cyan);
+      const result = 1 + crypto.randomInt(sides);
+      const embed = embeds.make(interaction, { color: embeds.COLORS.cyan, title: '🎲 Dice Roll', description: `You rolled **${result}** (1-${sides}).`, thumbnail: false });
+      let png = null;
+      if (cards.available()) {
+        await interaction.deferReply();
+        png = await cards.featureCard({ eyebrow: 'Dice roll', title: `You rolled ${result}`, detail: `${sides}-sided dice`, badge: String(result), footer: `Rolled by ${interaction.member?.displayName ?? interaction.user.username}`, accent: branding.accent(interaction.guildId ?? interaction.guild.id) }).catch(() => null);
+      }
+      return sendCard(interaction, embed, png, 'dice.png');
     }
     const options = interaction.options.getString('options', true).split('|').map((o) => o.trim()).filter(Boolean);
     if (options.length < 2) return interaction.reply(embeds.ephemeral(embeds.error(interaction, 'Need More Options', 'Give at least two options separated by `|`.')));

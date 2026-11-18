@@ -25,10 +25,13 @@ const {
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
+  AttachmentBuilder,
 } = require('discord.js');
 const embeds = require('../utils/embeds');
 const db = require('../utils/db');
 const tickets = require('./ticket');
+const cards = require('../utils/cards');
+const branding = require('../utils/branding');
 const { storedInvites, totalOf } = require('./invites');
 
 const MIN_DURATION_MS = 10_000; // 10 seconds
@@ -183,22 +186,26 @@ async function endGiveaway(client, messageId) {
     if (!message) return updated; // message or channel was deleted – nothing to announce
 
     await message.edit({ embeds: [giveawayEmbed(client, updated)], components: [enterRow(updated)] }).catch(() => {});
-    await message
-      .reply({
-        content: winnerIds.length ? mentions(winnerIds) : undefined,
-        embeds: [
-          winnerIds.length
-            ? embeds.make(client, {
-                color: embeds.COLORS.green,
-                title: `${embeds.e('giftLegend')} Congratulations!`,
-                description: `${mentions(winnerIds)} won **${updated.prize}**! ${embeds.e('bow')}\nPress the button below to open a private ticket and claim your prize.`,
-              })
-            : embeds.warn(client, 'No Winner', `Nobody entered the giveaway for **${updated.prize}**.`),
-        ],
-        components: winnerIds.length ? [claimRow(messageId)] : [],
-        allowedMentions: { users: winnerIds },
-      })
-      .catch((err) => console.error('[Giveaway] announce failed:', err.message));
+    const resultEmbed = winnerIds.length
+      ? embeds.make(client, {
+          color: embeds.COLORS.green,
+          title: `${embeds.e('giftLegend')} Congratulations!`,
+          description: `${mentions(winnerIds)} won **${updated.prize}**! ${embeds.e('bow')}\nPress the button below to open a private ticket and claim your prize.`,
+          thumbnail: false,
+        })
+      : embeds.warn(client, 'No Winner', `Nobody entered the giveaway for **${updated.prize}**.`);
+    let png = null;
+    const winnerName = winnerIds.length ? client.guilds?.cache?.get(updated.guildId)?.members?.cache?.get(winnerIds[0])?.displayName : null;
+    if (winnerIds.length && cards.available()) png = await cards.featureCard({ eyebrow: 'Giveaway winners', title: updated.prize, detail: `Winner: ${winnerName || winnerIds[0]}${winnerIds.length > 1 ? ` +${winnerIds.length - 1} more` : ''}`, badge: 'WIN', footer: 'See the announcement for all winner mentions', accent: branding.accent(updated.guildId) }).catch(() => null);
+    const payload = { content: winnerIds.length ? mentions(winnerIds) : undefined, embeds: [resultEmbed], components: winnerIds.length ? [claimRow(messageId)] : [], allowedMentions: { users: winnerIds } };
+    if (png) { resultEmbed.setImage('attachment://giveaway-winner.png'); payload.files = [new AttachmentBuilder(png, { name: 'giveaway-winner.png' })]; }
+    try { await message.reply(payload); }
+    catch (err) {
+      if (png) {
+        resultEmbed.setImage(null); delete payload.files;
+        await message.reply(payload).catch((retryErr) => console.error('[Giveaway] announce failed:', retryErr.message));
+      } else console.error('[Giveaway] announce failed:', err.message);
+    }
     return updated;
   } finally {
     ending.delete(messageId);

@@ -228,7 +228,7 @@ async function openTicket(interaction, prize = null, kind = KINDS.ticket_open, a
   db.update('tickets', (data) => {
     const g = (data[guild.id] ??= { counter: 0, tickets: {} });
     g.counter = number;
-    (g.tickets ??= {})[channel.id] = { userId: user.id, number, openedAt: Date.now(), lastActivityAt: Date.now(), supportRoleId: supportRole?.id ?? null, ...(prize ? { prize: prize.prize, hostId: host?.id ?? null } : {}) };
+    (g.tickets ??= {})[channel.id] = { userId: user.id, number, kind: prize ? (prize.prefix === 'order' ? 'order' : 'prize') : kind.key, openedAt: Date.now(), lastActivityAt: Date.now(), supportRoleId: supportRole?.id ?? null, ...(prize ? { prize: prize.prize, hostId: host?.id ?? null } : {}) };
   });
 
   // Welcome message inside the ticket (pings the opener and the support role once).
@@ -480,6 +480,7 @@ module.exports = {
         .addStringOption((o) => o.setName('kind').setDescription('Post one type only (optional)').addChoices({name:'Support',value:'support'},{name:'Buy',value:'buy'},{name:'Report',value:'report'})),
     )
     .addSubcommand((sub) => sub.setName('close').setDescription('🔒 Close the ticket you are in.'))
+    .addSubcommand((sub) => sub.setName('summary').setDescription('Private summary of this ticket (staff).'))
     .addSubcommand((sub) => sub.setName('dashboard').setDescription('📊 Ticket claims and feedback (staff).'))
     .addSubcommand((sub) => sub.setName('priority').setDescription('Set ticket priority (staff).').addStringOption((o) => o.setName('level').setDescription('Priority').setRequired(true).addChoices({name:'Low', value:'low'}, {name:'Normal',value:'normal'}, {name:'Urgent',value:'urgent'})))
     .addSubcommand((sub) => sub.setName('note').setDescription('Add a private staff note to this order.').addStringOption((o) => o.setName('text').setDescription('Private note').setRequired(true).setMaxLength(500)))
@@ -506,6 +507,23 @@ module.exports = {
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     const { guild } = interaction;
+
+    if (sub === 'summary') {
+      if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use Slash Command', 'For privacy, use `/ticket summary`.')] });
+      const ticket = ticketOf(guild.id, interaction.channelId);
+      if (!ticket) return interaction.reply(ephemeral(embeds.error(interaction, 'Not a Ticket', 'Use this inside a tracked ticket.')));
+      if (!isStaff(interaction.member, configOf(guild.id), ticket) || ticket.userId === interaction.user.id) return interaction.reply(ephemeral(embeds.error(interaction, 'Staff Only', 'Only ticket support staff can view this summary.')));
+      const order = db.guild('orders', guild.id).items?.[interaction.channelId];
+      const fields = [
+        { name: 'Owner', value: `<@${ticket.userId}>`, inline: true },
+        { name: 'Type', value: ticket.kind ?? (ticket.prize ? 'prize or order (legacy)' : 'Unknown (legacy)'), inline: true },
+        { name: 'Category', value: interaction.channel?.parentId ? `<#${interaction.channel.parentId}>` : 'No category', inline: true },
+        { name: 'Priority', value: ticket.priority || 'normal', inline: true },
+        { name: 'Order status', value: order ? String(order.status) : 'No tracked order', inline: true },
+        { name: 'Claimed by', value: ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Unclaimed', inline: true },
+      ];
+      return interaction.reply({ ...ephemeral(embeds.make(interaction, { title: `🎫 Ticket #${ticket.number}`, fields })), allowedMentions: { parse: [] } });
+    }
 
     if (sub === 'dashboard') {
       if (interaction.isPrefix) return interaction.reply({ embeds: [embeds.warn(interaction, 'Use the Slash Command', 'For privacy, use `/ticket dashboard`.')] });
