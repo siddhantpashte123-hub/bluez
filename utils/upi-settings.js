@@ -24,14 +24,25 @@ function get(guildId, userId) {
   if (!validId(settings.upiId) || typeof settings.name !== 'string' || settings.name.length > 60) throw new Error('Saved UPI settings are invalid. Set them again.');
   return settings;
 }
-function save(guildId, userId, upiId, name = '') {
-  if (!validId(upiId)) throw new Error('Invalid UPI ID. Use a format like name@bank.');
-  if (typeof name !== 'string' || name.length > 60) throw new Error('Invalid payee name.');
-  const data = read();
-  (data[guildId] ??= {})[userId] = { upiId, name };
+function write(data) {
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   const temp = `${FILE}.${randomBytes(8).toString('hex')}.tmp`;
   try { fs.writeFileSync(temp, JSON.stringify(data), { flag: 'wx', mode: 0o600 }); fs.renameSync(temp, FILE); }
   finally { try { fs.unlinkSync(temp); } catch {} }
 }
-module.exports = { validId, get, save };
+function save(guildId, userId, upiId, name = '') {
+  if (!validId(upiId)) throw new Error('Invalid UPI ID. Use a format like name@bank.');
+  if (typeof name !== 'string' || name.length > 60) throw new Error('Invalid payee name.');
+  const data = read();
+  (data[guildId] ??= {})[userId] = { upiId, name };
+  write(data);
+}
+function clear(guildId, userId) {
+  const data = read();
+  if (!Object.hasOwn(data[guildId] ?? {}, userId)) return false;
+  delete data[guildId][userId];
+  if (Object.keys(data[guildId]).length === 0) delete data[guildId];
+  write(data);
+  return true;
+}
+module.exports = { validId, get, save, clear };

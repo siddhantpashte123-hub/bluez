@@ -379,3 +379,13 @@ Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and 
 - `/ticket summary` privately shows the current ticket owner, type, priority, claim and tracked order status to that ticket's support staff, excluding its owner. It is slash-only. Legacy tickets may show an unknown type.
 - `/health` provides an administrator-only, slash-only private view of uptime, gateway latency, process memory, filesystem access and available space. These are local checks, not a guarantee that writes or other bot features work.
 - When a giveaway ends with winners, the existing claim announcement includes an optional winner card; if generation or sending fails, it falls back to the original announcement with winner mentions and the claim button. No-winner announcements remain text-only.
+
+
+## UPI notes, FAQs and support templates
+
+- `/upiclear` removes only your own saved UPI ID and payee name for the current server; it does not change `/shop setup` or delete previously posted QR messages. `!upiclear` works too.
+- `/upiqr amount:499 note:Order 25` adds an optional, **public** note (max 85 characters) to both the UPI link and QR. Split payments append their part number to the note in both. UPI apps may display or handle notes differently. Never include private data. For prefix, use named options, for example `!upiqr amount:499 note:Order 25`.
+- `/faq set key:delivery answer:Your public answer` and `/faq remove key:delivery` require Manage Server. Everyone can use `/faq list` and `/faq view key:delivery`. FAQs are public, max 40 per server, and keys use letters, numbers, underscores or hyphens.
+- `/quickreply set key:hello text:Hello!` and `/quickreply remove key:hello` require Manage Server. Inside a tracked ticket, authorized ticket staff can use private `/quickreply list` and public `/quickreply send key:hello`. Text is visible to everyone in the ticket, with mentions disabled; never store secrets. Ticket owners cannot use staff quick replies, even if they are staff. The `!` prefix supports set/remove/send, but prefix messages and their arguments are public; list is slash-only.
+- `/shop style color:#5865F2 label:My Shop` customizes `/shop product` cards and their embed fallback. Manage Server permission is required. `/shop style reset:true` restores defaults. Other shop panels and cards are not affected.
+- FAQ and quick reply data use `data/faq.json` and `data/quickreplies.json`; include them when backing up or migrating the bot's `data/` directory.

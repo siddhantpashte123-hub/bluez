@@ -21,7 +21,7 @@ const fields = i => last(i).embeds[0].data.fields;
 
 test('slash builders accept amount alone, ID and optional name', () => {
   const q = upiqr.data.toJSON().options;
-  assert.deepEqual(q.map(o => [o.name, !!o.required]), [['amount', true], ['upi_id', false], ['name', false]]);
+  assert.deepEqual(q.map(o => [o.name, !!o.required]), [['amount', true], ['upi_id', false], ['name', false], ['note', false]]);
   assert.deepEqual(upiset.data.toJSON().options.map(o => [o.name, !!o.required]), [['upi_id', true], ['name', false]]);
 });
 
@@ -82,4 +82,50 @@ test('actual prefix runner supports saved amount-only, old positional and set wi
     if (idx === 0) assert.deepEqual(settings.get(gid, authorId), { upiId: 'demo@upi', name: 'Demo Name' });
     if (idx === 2) assert.match(JSON.stringify(out.at(-1)), /Old Name/);
   }
+});
+
+test('payment notes match the actual PNG payload and UPI links for single and split QR', async () => {
+  const { generateQR } = await import('@omkarbhosale/upiqr');
+  for (const amount of [499, 4000]) {
+    const i = interaction({ amount, upi_id: 'test@upi', name: 'Test', note: 'Order 25 & more' }); await upiqr.execute(i);
+    const payload = last(i);
+    for (const [index, embed] of payload.embeds.entries()) {
+      const value = embed.data.fields.find(f => f.name.includes('Pay Now')).value.replace(/`/g, '');
+      const params = new URL(value).searchParams;
+      const expectedNote = amount > 2000 ? `Order 25 & more (Part ${index + 1}/${payload.embeds.length})` : 'Order 25 & more';
+      assert.equal(params.get('tn'), expectedNote);
+      assert.equal(embed.data.fields.find(f => f.name.includes('Payment Note')).value, expectedNote);
+      const expectedData = await generateQR({ UPI_ID: 'test@upi', AMOUNT: Number(params.get('am')), name: 'Test', note: expectedNote });
+      assert.deepEqual(payload.files[index].attachment, Buffer.from(expectedData.split(',')[1], 'base64'));
+    }
+  }
+});
+
+test('upiclear removes only the caller’s settings, reports no data and handles write errors', async () => {
+  const upiclear = require('../commands/upiclear');
+  settings.save(gid, uid, 'first@upi', 'First'); settings.save(gid, otherUser, 'second@upi', 'Second'); settings.save(otherGuild, uid, 'third@upi', 'Third');
+  const old = fs.writeFileSync;
+  try { fs.writeFileSync = () => { throw Error('disk failure'); }; const failed = interaction(); await upiclear.execute(failed); assert.match(JSON.stringify(last(failed)), /Could Not Remove/); }
+  finally { fs.writeFileSync = old; }
+  assert.equal(settings.get(gid, uid).upiId, 'first@upi');
+  const removed = interaction(); await upiclear.execute(removed); assert.match(JSON.stringify(last(removed)), /UPI ID Removed/); assert.equal(last(removed).flags, 64);
+  assert.equal(settings.get(gid, uid), null); assert.equal(settings.get(gid, otherUser).upiId, 'second@upi'); assert.equal(settings.get(otherGuild, uid).upiId, 'third@upi');
+  const missing = interaction(); await upiclear.execute(missing); assert.match(JSON.stringify(last(missing)), /Nothing Saved/);
+  const qr = interaction({ amount: 100 }); await upiqr.execute(qr); assert.match(JSON.stringify(last(qr)), /Set Your UPI ID First/);
+});
+
+test('prefix named note and legacy multiword names work; prefix clear only affects caller', async () => {
+  const prefix = require('../utils/prefix'), upiclear = require('../commands/upiclear');
+  const id = '923456789012345678'; settings.save(gid, id, 'prefix@upi', 'User');
+  const commands = new Map([['upiqr', upiqr], ['upiclear', upiclear]]);
+  for (const [idx, [content, expected]] of [['!upiqr amount:499 note:Order 25', /Order 25/], ['!upiqr prefix@upi 499 John Doe', /John Doe/], ['!upiclear', /UPI ID Removed/]].entries()) {
+    const out = [], response = { edit: async p => { out.push(p); return response; } };
+    const channel = { permissionsFor: () => ({ has: () => true }), send: async p => { out.push(p); return response; } };
+    const author = { id: `8${idx}2345678901234567`, username: 'Tester' };
+    settings.save(gid, author.id, 'prefix@upi', 'User');
+    const msg = { content, id: 'message', client: { ...client, commands }, guild: { id: gid, members: { me: {} } }, guildId: gid, channelId: 'channel', channel, author, member: { permissions: { has: () => true } }, createdTimestamp: Date.now(), reply: async p => { out.push(p); return response; } };
+    assert.equal(await prefix.handle(msg), true); assert.match(JSON.stringify(out.at(-1)), expected, content);
+    if (idx === 2) assert.equal(settings.get(gid, author.id), null);
+  }
+  assert.equal(settings.get(gid, id).upiId, 'prefix@upi');
 });

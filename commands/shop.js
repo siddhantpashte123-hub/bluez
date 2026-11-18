@@ -364,6 +364,10 @@ module.exports = {
     )
     .addSubcommand((s) => s.setName('products').setDescription('🛍️ Show all products with price and stock.'))
     .addSubcommand((s) => s.setName('product').setDescription('Show a product detail card.').addStringOption(productOpt))
+    .addSubcommand((s) => s.setName('style').setDescription('Customize product detail card (Manage Server).')
+      .addStringOption(o => o.setName('color').setDescription('Hex color, e.g. #5865F2').setMinLength(7).setMaxLength(7))
+      .addStringOption(o => o.setName('label').setDescription('Card heading').setMaxLength(35))
+      .addBooleanOption(o => o.setName('reset').setDescription('Restore defaults')))
     .addSubcommand((s) => s.setName('search').setDescription('Privately search tracked orders (staff).')
       .addIntegerOption((o) => o.setName('number').setDescription('Order number').setMinValue(1))
       .addUserOption((o) => o.setName('customer').setDescription('Customer'))
@@ -393,15 +397,33 @@ module.exports = {
     const fail = (title, text) => interaction.reply(embeds.ephemeral(embeds.error(interaction, title, text)));
 
     if (sub === 'products') return interaction.reply({ embeds: [productsEmbed(interaction, guild)] });
+    if (sub === 'style') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return fail('Missing Permission', 'Manage Server is required.');
+      const color = interaction.options.getString('color'), label = interaction.options.getString('label'), reset = interaction.options.getBoolean('reset');
+      if (reset && (color !== null || label !== null)) return fail('Invalid Options', 'Use reset alone, without color or label.');
+      if (color !== null && !/^#[0-9a-f]{6}$/i.test(color)) return fail('Invalid Color', 'Use a hex color like #5865F2.');
+      if (label !== null && (!label.trim() || /[\r\n]/.test(label))) return fail('Invalid Label', 'Use a non-empty single-line label.');
+      if (!reset && color === null && label === null) return fail('No Changes', 'Provide a color or label, or set reset to true.');
+      db.updateGuild('shop', guild.id, store => {
+        if (reset) delete store.cardStyle;
+        else { const style = (store.cardStyle ??= {}); if (color !== null) style.color = color.toUpperCase(); if (label !== null) style.label = label.trim(); }
+      });
+      audit.record(guild.id, interaction.user.id, reset ? 'shop.style.reset' : 'shop.style.set');
+      return interaction.reply(embeds.ephemeral(embeds.success(interaction, reset ? 'Product Card Reset' : 'Product Card Updated', 'This affects `/shop product` cards and their embed fallback.')));
+    }
     if (sub === 'product') {
       const found = findProduct(guild.id, interaction.options.getString('product', true));
       if (!found) return fail('Product Not Found', 'Check `/shop products`.');
       const [, product] = found;
+      const style = shopOf(guild.id).cardStyle ?? {};
+      const accent = /^#[0-9a-f]{6}$/i.test(style.color ?? '') ? style.color : branding.accent(guild.id);
       const embed = embeds.make(interaction, { title: `🛍️ ${product.name}`, color: embeds.COLORS.cyan, description: product.description || 'No description.', fields: [{ name: 'Price', value: rupees(product.price), inline: true }, { name: 'Stock', value: stockText(product.stock), inline: true }, { name: 'Category', value: product.category || 'Uncategorized', inline: true }], thumbnail: false });
+      if (style.color && /^#[0-9a-f]{6}$/i.test(style.color)) embed.setColor(parseInt(style.color.slice(1), 16));
+      if (style.label) embed.setFooter({ text: style.label.slice(0, 35) });
       let png = null;
       if (cards.available()) {
         await interaction.deferReply();
-        png = await cards.featureCard({ eyebrow: 'Product details', title: product.name, detail: product.description || 'Available in our shop', badge: 'SHOP', footer: `${rupees(product.price)} • ${product.stock < 0 ? 'Unlimited stock' : `${product.stock} in stock`}`, accent: branding.accent(guild.id) }).catch(() => null);
+        png = await cards.featureCard({ eyebrow: style.label || 'Product details', title: product.name, detail: product.description || 'Available in our shop', badge: 'SHOP', footer: `${rupees(product.price)} • ${product.stock < 0 ? 'Unlimited stock' : `${product.stock} in stock`}`, accent }).catch(() => null);
       }
       return sendCard(interaction, embed, png, 'product.png');
     }

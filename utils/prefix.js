@@ -319,6 +319,10 @@ async function handle(message) {
     if (path === 'upiqr' && args.length >= 2 && args[0].text.includes('@') && !args[0].text.includes(':') && /^[+-]?(\d+\.?\d*|\.\d+)$/.test(args[1].text)) {
       args = [args[1], args[0], ...args.slice(2)];
     }
+    // Legacy multi-word payee names remain one field; payment notes use named options.
+    if (path === 'upiqr' && args.length >= 3 && !args.some(a => !a.quoted && /^(amount|upi_id|name|note):/.test(a.text))) {
+      args = [{ text: `amount:${args[0].text}` }, { text: `upi_id:${args[1].text}` }, { text: `name:${args.slice(2).map(a => a.text).join(' ')}` }];
+    }
     values = await parseOptions(options, args, message, path);
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
