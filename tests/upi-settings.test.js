@@ -85,7 +85,8 @@ test('actual prefix runner supports saved amount-only, old positional and set wi
 });
 
 test('payment notes match the actual PNG payload and UPI links for single and split QR', async () => {
-  const { generateQR } = await import('@omkarbhosale/upiqr');
+  const { PNG } = require('pngjs');
+  const jsQR = require('jsqr');
   for (const amount of [499, 4000]) {
     const i = interaction({ amount, upi_id: 'test@upi', name: 'Test', note: 'Order 25 & more' }); await upiqr.execute(i);
     const payload = last(i);
@@ -95,8 +96,11 @@ test('payment notes match the actual PNG payload and UPI links for single and sp
       const expectedNote = amount > 2000 ? `Order 25 & more (Part ${index + 1}/${payload.embeds.length})` : 'Order 25 & more';
       assert.equal(params.get('tn'), expectedNote);
       assert.equal(embed.data.fields.find(f => f.name.includes('Payment Note')).value, expectedNote);
-      const expectedData = await generateQR({ UPI_ID: 'test@upi', AMOUNT: Number(params.get('am')), name: 'Test', note: expectedNote });
-      assert.deepEqual(payload.files[index].attachment, Buffer.from(expectedData.split(',')[1], 'base64'));
+      const png = PNG.sync.read(payload.files[index].attachment);
+      assert.equal(png.width, 640); assert.equal(png.height, 640);
+      const decoded = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+      assert.ok(decoded, 'the QR image must decode');
+      assert.equal(decoded.data, value, 'the scannable QR must match the displayed payment link');
     }
   }
 });
