@@ -2,6 +2,8 @@
 
 A feature-rich Discord bot built with **Node.js + discord.js v14**. Slash and `!` prefix commands, premium embeds and image cards, JSON file storage, and a one-click installer.
 
+📚 See the [complete command list](COMMANDS.md) for every slash command and its options.
+
 > **No Docker.** The bot runs natively (`node index.js` / `npm start`) and is kept online 24/7 by **PM2**.
 
 <a id="fresh-vps-install"></a>
@@ -244,7 +246,7 @@ Everything below is switched **off** until you set it up. Quick setup commands:
 | Fun and info | `/fun 8ball\|coinflip\|dice\|choose`, `/info server\|avatar\|ping\|bot`, `/embed` |
 | Shop with UPI order tickets | `/shop setup upi_id:name@bank name:…` → `/shop add` → `/shop panel` |
 | Litecoin (LTC) payments | `/shop ltc address:ltc1…` (order tickets), `/ltc qr`, `/ltc price`, `/ltc check` |
-| Calculator | `/calc expression:1999 * 3 + 18%` |
+| Calculator | `/calc expression:1999 * 3 + 18%` (premium image card, with text fallback) |
 | Vouches (reviews) | `/vouch channel`, `/vouch give stars:5 review:…`, `/vouch stats` |
 
 **Shop flow:** a member presses a product button → a private `order-…` ticket opens → the bot posts the UPI QR for the price → the member pays and sends a screenshot → staff presses **Mark as Paid** (stock goes down by one, the order is written to the log channel).

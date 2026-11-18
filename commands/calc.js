@@ -9,6 +9,9 @@
  */
 const { SlashCommandBuilder, InteractionContextType } = require('discord.js');
 const embeds = require('../utils/embeds');
+const cards = require('../utils/cards');
+const branding = require('../utils/branding');
+const { sendImageOrEmbed } = require('../utils/card-response');
 
 const FUNCTIONS = {
   sqrt: Math.sqrt, abs: Math.abs, round: Math.round, floor: Math.floor, ceil: Math.ceil,
@@ -169,18 +172,22 @@ module.exports = {
         embeds.ephemeral(embeds.error(interaction, 'Invalid Calculation', `${err instanceof RangeError ? 'The expression is too complex.' : err.message}\n\n**Examples:** \`1999 * 3\`, \`500 + 18%\`, \`(5 + 3) / 2\`, \`2^10\`, \`sqrt(144)\`, \`2.5k * 4\``)),
       );
     }
-    return interaction.reply({
-      embeds: [
-        embeds.make(interaction, {
-          color: embeds.COLORS.cyan,
-          title: '🧮 Calculator',
-          fields: [
-            { name: '📥 Input', value: `\`\`\`${expression.replace(/`/g, "'")}\`\`\`` },
-            { name: '📤 Result', value: `\`\`\`${format(result)}\`\`\`` },
-          ],
-          thumbnail: false,
-        }),
+    const formatted = format(result);
+    const embed = embeds.make(interaction, {
+      color: embeds.COLORS.cyan,
+      title: '🧮 Calculator',
+      fields: [
+        { name: '📥 Input', value: `\`\`\`${expression.replace(/`/g, "'")}\`\`\`` },
+        { name: '📤 Result', value: `\`\`\`${formatted}\`\`\`` },
       ],
+      thumbnail: false,
     });
+    let png = null;
+    if (cards.available()) {
+      await interaction.deferReply();
+      png = await cards.calculatorCard({ expression, result: formatted, accent: branding.accent(interaction.guildId ?? interaction.guild.id) })
+        .catch(err => (console.error('[/calc] card:', err.message), null));
+    }
+    return sendImageOrEmbed(interaction, embed, png, 'calculator.png', `Calculator: ${expression} = ${formatted}`);
   },
 };
