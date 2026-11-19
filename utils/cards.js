@@ -15,6 +15,7 @@
  * ---------------------------------------------------------------
  */
 const path = require('node:path');
+const { wrapPreservingText } = require('./text-layout');
 
 let canvasLib = null;
 try {
@@ -563,57 +564,55 @@ async function invoiceCard({ serverName, icon, product, amount, invoiceId, date,
   if (!canvasLib) return null;
   if (!Buffer.isBuffer(icon) || !icon.length) throw new Error('A server logo is required.');
   const logo = await canvasLib.loadImage(icon);
-  const canvas = canvasLib.createCanvas(900, 1030), ctx = canvas.getContext('2d');
-  const bg = ctx.createLinearGradient(0, 0, 900, 1030);
-  bg.addColorStop(0, '#0b1128'); bg.addColorStop(0.6, '#161734'); bg.addColorStop(1, '#122b3d');
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, 900, 1030);
-  glow(ctx, 765, 120, 340, `${accent}44`); glow(ctx, 100, 900, 300, 'rgba(0,229,255,0.12)');
-  roundRect(ctx, 28, 28, 844, 974, 30); ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+  const canvas = canvasLib.createCanvas(1200, 700), ctx = canvas.getContext('2d');
+  const bg = ctx.createLinearGradient(0, 0, 1200, 700);
+  bg.addColorStop(0, '#080e20'); bg.addColorStop(0.52, '#111a33'); bg.addColorStop(1, '#102b3d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 1200, 700);
+  glow(ctx, 1050, 65, 330, `${accent}55`); glow(ctx, 90, 630, 280, 'rgba(0,210,255,0.12)');
+  roundRect(ctx, 24, 24, 1152, 652, 30); ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2; ctx.stroke();
 
-  // Logo is mandatory: do not substitute initials for the server icon.
-  ctx.save(); ctx.beginPath(); ctx.arc(112, 112, 48, 0, Math.PI * 2); ctx.clip();
-  ctx.drawImage(logo, 64, 64, 96, 96); ctx.restore();
-  ctx.beginPath(); ctx.arc(112, 112, 50, 0, Math.PI * 2); ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
-  ctx.fillStyle = '#9eb3e4'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('SERVER INVOICE', 185, 78);
-  // Avoid truncation: fit whole user-visible values in their allocated area or fail.
-  const graphemes = value => typeof Intl.Segmenter === 'function' ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].map(v => v.segment) : Array.from(value);
+  // The actual Discord server icon is required; never replace it with initials.
+  ctx.save(); ctx.beginPath(); ctx.arc(118, 111, 55, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(logo, 63, 56, 110, 110); ctx.restore();
+  ctx.beginPath(); ctx.arc(118, 111, 57, 0, Math.PI * 2); ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#a7b9e1'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('SERVER INVOICE', 194, 69);
+
+  // Fit full values in their allocated area without cutting words, graphemes or text.
   function drawWrapped(value, x, y, width, maxLines, initialSize, minSize, color) {
     const text = String(value).replace(/[\r\n\t]/g, ' ');
     let lines = [], size;
     for (size = initialSize; size >= minSize; size--) {
       ctx.font = `${size}px "${FONT.semi}", "Noto Sans Devanagari"`;
-      lines = []; let current = '';
-      for (const ch of graphemes(text)) {
-        if (current && ctx.measureText(current + ch).width > width) { lines.push(current); current = ''; }
-        current += ch;
-      }
-      if (current) lines.push(current);
+      lines = wrapPreservingText(text, width, s => ctx.measureText(s).width);
       if (lines.length <= maxLines && lines.every(line => ctx.measureText(line).width <= width)) break;
     }
     if (size < minSize || !lines.length) throw new Error('Invoice text is too long to render clearly.');
     ctx.fillStyle = color; lines.forEach((line, i) => ctx.fillText(line, x, y + i * (size + 5)));
   }
-  drawWrapped(serverName, 185, 112, 600, 2, 30, 16, '#ffffff');
-  ctx.fillStyle = '#9eb3e4'; ctx.font = `14px "${FONT.regular}"`; ctx.fillText(`INVOICE  ${invoiceId}`, 185, 160);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(64, 190, 772, 1);
+  drawWrapped(serverName, 194, 103, 758, 3, 29, 17, '#ffffff');
+  roundRect(ctx, 977, 61, 158, 40, 12); ctx.fillStyle = 'rgba(96,138,245,0.18)'; ctx.fill();
+  ctx.fillStyle = '#c1d8ff'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('MANUAL', 1022, 87);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(62, 189, 1076, 1);
 
-  ctx.fillStyle = '#ffffff'; ctx.font = `48px "${FONT.bold}"`; ctx.fillText('Invoice', 64, 267);
-  ctx.fillStyle = '#9eb3e4'; ctx.font = `16px "${FONT.regular}"`; ctx.fillText('A manual invoice from this server', 66, 300);
-  roundRect(ctx, 64, 335, 772, 245, 22); ctx.fillStyle = 'rgba(5,10,28,0.58)'; ctx.fill();
-  ctx.fillStyle = '#9db1dc'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('PRODUCT', 90, 371);
-  drawWrapped(product, 90, 405, 715, 3, 26, 16, '#ffffff');
-  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(90, 488, 720, 1);
-  ctx.fillStyle = '#a8badf'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('TOTAL AMOUNT', 90, 522);
-  drawWrapped(amount, 90, 559, 715, 1, 32, 20, '#ffffff');
+  roundRect(ctx, 62, 219, 688, 255, 22); ctx.fillStyle = 'rgba(4,10,26,0.58)'; ctx.fill();
+  ctx.fillStyle = '#98abd2'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('PRODUCT / SERVICE', 90, 260);
+  drawWrapped(product, 90, 307, 626, 3, 34, 15, '#ffffff');
+  ctx.fillStyle = '#91a7cf'; ctx.font = `16px "${FONT.regular}"`; ctx.fillText('A manual invoice from this server', 90, 444);
 
-  roundRect(ctx, 64, 610, 772, 135, 20); ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fill();
-  ctx.fillStyle = '#99acd8'; ctx.font = `13px "${FONT.semi}"`; ctx.fillText('ISSUED ON (UTC)', 90, 645); ctx.fillText('RECIPIENT ID', 390, 645);
-  ctx.fillStyle = '#e7eeff'; ctx.font = `20px "${FONT.semi}"`; ctx.fillText(date, 90, 681); ctx.fillText(recipientId, 390, 681);
-  ctx.fillStyle = '#9eb3e4'; ctx.font = `15px "${FONT.regular}"`; ctx.fillText('Payment is not verified. This is not a payment receipt.', 67, 823);
-  ctx.fillText('Please confirm details directly with the server staff.', 67, 852);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(64, 910, 772, 1);
-  ctx.fillStyle = '#91a4cd'; ctx.font = `13px "${FONT.semi}"`; ctx.fillText('SERVER BRAND  /  MANUAL INVOICE', 67, 945);
+  roundRect(ctx, 770, 219, 368, 255, 22); ctx.fillStyle = 'rgba(74,115,231,0.14)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(125,166,255,0.27)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#a4bee7'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('TOTAL AMOUNT', 800, 261);
+  drawWrapped(amount, 800, 319, 310, 1, 38, 20, '#ffffff');
+  ctx.fillStyle = '#afc4e8'; ctx.font = `15px "${FONT.regular}"`; ctx.fillText('INR', 800, 352);
+
+  roundRect(ctx, 62, 495, 1076, 106, 19); ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fill();
+  ctx.fillStyle = '#96aad4'; ctx.font = `13px "${FONT.semi}"`;
+  ctx.fillText('INVOICE ID', 89, 528); ctx.fillText('DATE (UTC)', 480, 528); ctx.fillText('RECIPIENT ID', 727, 528);
+  ctx.fillStyle = '#e5eeff'; ctx.font = `18px "${FONT.semi}"`;
+  ctx.fillText(invoiceId, 89, 561); ctx.fillText(date, 480, 561); ctx.fillText(recipientId, 727, 561);
+  ctx.fillStyle = '#a7badf'; ctx.font = `16px "${FONT.regular}"`;
+  ctx.fillText('Payment is not verified. This is not a payment receipt.', 66, 643);
   return canvas.encode('png');
 }
 

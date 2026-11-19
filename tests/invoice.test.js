@@ -109,3 +109,56 @@ test('validation, logo, canvas, member, render and DM failures never report succ
     await withMocks(async f => { await command.execute(f.i); assert.equal(f.sent.length, 0, JSON.stringify(opts)); assert.doesNotMatch(JSON.stringify(f.getResult()), /Invoice Sent/); }, opts);
   }
 });
+
+test('compact landscape card preserves full long names, product, amounts and server logo', async () => {
+  if (!cards.available()) return;
+  const canvas = require('@napi-rs/canvas'); const { PNG } = require('pngjs');
+  const seed = canvas.createCanvas(24, 24), ink = seed.getContext('2d'); ink.fillStyle = '#1464a8'; ink.fillRect(0, 0, 24, 24);
+  const logo = await seed.encode('png');
+  const data = { serverName: 'BLUENODES | PREMIUM HOSTING | DEVELOPMENT | FREE FOREVER', icon: logo, product: 'Premium Hosting and Development Package', amount: '₹9,99,99,999.99', invoiceId: 'INV-0123456789ABCDEF', date: '2026-11-19', recipientId };
+  const original = canvas.createCanvas; const drawn = [];
+  try {
+    canvas.createCanvas = (...args) => {
+      const surface = original(...args), context = surface.getContext('2d'), fillText = context.fillText.bind(context);
+      context.fillText = (...params) => { drawn.push(params[0]); return fillText(...params); };
+      return surface;
+    };
+    const buffer = await cards.invoiceCard(data);
+    const image = PNG.sync.read(buffer); assert.equal(image.width, 1200); assert.equal(image.height, 700);
+    const serverStart = drawn.indexOf('SERVER INVOICE') + 1, serverEnd = drawn.indexOf('MANUAL');
+    assert.equal(drawn.slice(serverStart, serverEnd).join(''), data.serverName);
+    const prodStart = drawn.indexOf('PRODUCT / SERVICE') + 1, prodEnd = drawn.indexOf('A manual invoice from this server');
+    assert.equal(drawn.slice(prodStart, prodEnd).join(''), data.product);
+    assert.ok(drawn.includes(data.amount)); assert.ok(drawn.includes(data.invoiceId)); assert.ok(drawn.includes(recipientId));
+  } finally { canvas.createCanvas = original; }
+});
+
+test('word-aware wrapping preserves every grapheme and breaks long names safely', () => {
+  const { wrapPreservingText } = require('../utils/text-layout');
+  const name = 'BLUENODES | PREMIUM HOSTING | DEVELOPMENT | FREE FOREVER';
+  const lines = wrapPreservingText(name, 20, s => [...s].length);
+  assert.equal(lines.join(''), name);
+  assert.ok(lines.every(s => [...s].length <= 20));
+  assert.ok(lines.some(s => s.includes('DEVELOPMENT')));
+  const original = '👩‍💻कंपनी ' + 'a'.repeat(40);
+  const parts = wrapPreservingText(original, 12, s => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)].length);
+  assert.equal(parts.join(''), original); assert.ok(parts[0].startsWith('👩‍💻'));
+});
+
+test('compact DM safely escapes formatted product while preserving invoice details', async () => {
+  await withMocks(async (f, getRendered) => {
+    await command.execute(f.i);
+    const p = f.sent[0]; assert.match(p.content, /\\\*Hosting\\\*/); assert.match(p.content, /@everyone/);
+    assert.match(p.content, /Server 123456789012345678/); assert.match(p.content, /Issuer 223456789012345678/);
+    assert.match(p.content, /Payment is not verified/); assert.deepEqual(p.allowedMentions, { parse: [] });
+    assert.equal(getRendered().product, '*Hosting* @everyone'); assert.match(p.files[0].description, /\*Hosting\* @everyone/);
+  }, { product: '*Hosting* @everyone' });
+});
+
+test('maximum supported wide server and product names still render without truncation', async () => {
+  if (!cards.available()) return;
+  const { createCanvas } = require('@napi-rs/canvas');
+  const canvas = createCanvas(16, 16); canvas.getContext('2d').fillRect(0, 0, 16, 16);
+  const img = await cards.invoiceCard({ serverName: 'W'.repeat(100), product: 'W'.repeat(100), icon: await canvas.encode('png'), amount: '₹9,99,99,999.99', invoiceId: 'INV-0123456789ABCDEF', date: '2026-11-19', recipientId });
+  assert.equal(img.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+});
