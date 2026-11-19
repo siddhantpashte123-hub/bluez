@@ -36,3 +36,34 @@ async function fetchIcon(guild) {
   return Buffer.concat(chunks);
 }
 module.exports = { parsePrice, formatPrice, productName, fetchIcon };
+
+// Item arithmetic is always performed in integer paise, never floating point.
+const MAX_TOTAL = 9_999_999_999;
+function quantity(value) {
+  const text = String(value ?? '').trim() || '1';
+  if (!/^[1-9]\d{0,3}$/.test(text)) throw new Error('Quantity must be a whole number from 1 to 9999.');
+  return Number(text);
+}
+function parseItems(product, price, qty, extra = '') {
+  const items = [{ name: productName(product), quantity: quantity(qty), unitPaise: parsePrice(price) }];
+  const lines = String(extra).trim() ? String(extra).trim().split(/\r?\n/) : [];
+  if (lines.length > 4) throw new Error('Add at most 4 extra items.');
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length !== 3 || !parts[1].trim()) throw new Error('Extra items must use one line each: name | quantity | unit price.');
+    items.push({ name: productName(parts[0]), quantity: quantity(parts[1]), unitPaise: parsePrice(parts[2]) });
+  }
+  let total = 0;
+  for (const item of items) {
+    total += item.unitPaise * item.quantity;
+    if (total > MAX_TOTAL) throw new Error('Invoice total cannot exceed ₹9,99,99,999.99.');
+  }
+  return { items, totalPaise: total };
+}
+function noteText(value) {
+  const text = String(value ?? '').trim();
+  if (text.length > 200 || /[\x00-\x1f\x7f]/.test(text)) throw new Error('Notes must be a single line of up to 200 characters.');
+  return text;
+}
+module.exports.parseItems = parseItems;
+module.exports.noteText = noteText;
