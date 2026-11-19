@@ -23,6 +23,7 @@ try {
   canvasLib.GlobalFonts.registerFromPath(path.join(fonts, 'Inter_400Regular.ttf'), 'Inter');
   canvasLib.GlobalFonts.registerFromPath(path.join(fonts, 'Inter_600SemiBold.ttf'), 'Inter SemiBold');
   canvasLib.GlobalFonts.registerFromPath(path.join(fonts, 'Inter_800ExtraBold.ttf'), 'Inter ExtraBold');
+  canvasLib.GlobalFonts.registerFromPath(path.join(fonts, 'NotoSansDevanagari.ttf'), 'Noto Sans Devanagari');
 } catch (err) {
   console.warn('[Cards] Image cards are disabled (', err.message.split('\n')[0], '). Run "npm install" to enable them.');
 }
@@ -557,4 +558,63 @@ async function calculatorCard({ expression, result, accent = '#00e5ff' }) {
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, quality };
+/** Branded manual invoice. Full values also accompany the image in the DM. */
+async function invoiceCard({ serverName, icon, product, amount, invoiceId, date, recipientId, accent = '#5865f2' }) {
+  if (!canvasLib) return null;
+  if (!Buffer.isBuffer(icon) || !icon.length) throw new Error('A server logo is required.');
+  const logo = await canvasLib.loadImage(icon);
+  const canvas = canvasLib.createCanvas(900, 1030), ctx = canvas.getContext('2d');
+  const bg = ctx.createLinearGradient(0, 0, 900, 1030);
+  bg.addColorStop(0, '#0b1128'); bg.addColorStop(0.6, '#161734'); bg.addColorStop(1, '#122b3d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 900, 1030);
+  glow(ctx, 765, 120, 340, `${accent}44`); glow(ctx, 100, 900, 300, 'rgba(0,229,255,0.12)');
+  roundRect(ctx, 28, 28, 844, 974, 30); ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Logo is mandatory: do not substitute initials for the server icon.
+  ctx.save(); ctx.beginPath(); ctx.arc(112, 112, 48, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(logo, 64, 64, 96, 96); ctx.restore();
+  ctx.beginPath(); ctx.arc(112, 112, 50, 0, Math.PI * 2); ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#9eb3e4'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('SERVER INVOICE', 185, 78);
+  // Avoid truncation: fit whole user-visible values in their allocated area or fail.
+  const graphemes = value => typeof Intl.Segmenter === 'function' ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].map(v => v.segment) : Array.from(value);
+  function drawWrapped(value, x, y, width, maxLines, initialSize, minSize, color) {
+    const text = String(value).replace(/[\r\n\t]/g, ' ');
+    let lines = [], size;
+    for (size = initialSize; size >= minSize; size--) {
+      ctx.font = `${size}px "${FONT.semi}", "Noto Sans Devanagari"`;
+      lines = []; let current = '';
+      for (const ch of graphemes(text)) {
+        if (current && ctx.measureText(current + ch).width > width) { lines.push(current); current = ''; }
+        current += ch;
+      }
+      if (current) lines.push(current);
+      if (lines.length <= maxLines && lines.every(line => ctx.measureText(line).width <= width)) break;
+    }
+    if (size < minSize || !lines.length) throw new Error('Invoice text is too long to render clearly.');
+    ctx.fillStyle = color; lines.forEach((line, i) => ctx.fillText(line, x, y + i * (size + 5)));
+  }
+  drawWrapped(serverName, 185, 112, 600, 2, 30, 16, '#ffffff');
+  ctx.fillStyle = '#9eb3e4'; ctx.font = `14px "${FONT.regular}"`; ctx.fillText(`INVOICE  ${invoiceId}`, 185, 160);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(64, 190, 772, 1);
+
+  ctx.fillStyle = '#ffffff'; ctx.font = `48px "${FONT.bold}"`; ctx.fillText('Invoice', 64, 267);
+  ctx.fillStyle = '#9eb3e4'; ctx.font = `16px "${FONT.regular}"`; ctx.fillText('A manual invoice from this server', 66, 300);
+  roundRect(ctx, 64, 335, 772, 245, 22); ctx.fillStyle = 'rgba(5,10,28,0.58)'; ctx.fill();
+  ctx.fillStyle = '#9db1dc'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('PRODUCT', 90, 371);
+  drawWrapped(product, 90, 405, 715, 3, 26, 16, '#ffffff');
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(90, 488, 720, 1);
+  ctx.fillStyle = '#a8badf'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('TOTAL AMOUNT', 90, 522);
+  drawWrapped(amount, 90, 559, 715, 1, 32, 20, '#ffffff');
+
+  roundRect(ctx, 64, 610, 772, 135, 20); ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fill();
+  ctx.fillStyle = '#99acd8'; ctx.font = `13px "${FONT.semi}"`; ctx.fillText('ISSUED ON (UTC)', 90, 645); ctx.fillText('RECIPIENT ID', 390, 645);
+  ctx.fillStyle = '#e7eeff'; ctx.font = `20px "${FONT.semi}"`; ctx.fillText(date, 90, 681); ctx.fillText(recipientId, 390, 681);
+  ctx.fillStyle = '#9eb3e4'; ctx.font = `15px "${FONT.regular}"`; ctx.fillText('Payment is not verified. This is not a payment receipt.', 67, 823);
+  ctx.fillText('Please confirm details directly with the server staff.', 67, 852);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(64, 910, 772, 1);
+  ctx.fillStyle = '#91a4cd'; ctx.font = `13px "${FONT.semi}"`; ctx.fillText('SERVER BRAND  /  MANUAL INVOICE', 67, 945);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, invoiceCard, quality };
