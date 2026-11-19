@@ -89,51 +89,77 @@ const paymentUri = (address, ltc) => `litecoin:${address}?amount=${formatLtc(ltc
 /** PNG buffer of the payment QR. */
 const paymentQr = (address, ltc) => QRCode.toBuffer(paymentUri(address, ltc), { type: 'png', width: 512, margin: 2, errorCorrectionLevel: 'M' });
 
+/** Sum and format integer litoshis without floating point rounding. */
+function sumSats(outputs, address) {
+  let total = 0;
+  for (const output of outputs) {
+    if (address !== undefined && output.address !== address) continue;
+    if (!Number.isSafeInteger(output.sats) || output.sats < 0 || !Number.isSafeInteger(total + output.sats)) throw new Error('Invalid transaction output amount');
+    total += output.sats;
+  }
+  return total;
+}
+function formatSats(value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid litoshi amount');
+  const n = BigInt(value), whole = n / 100000000n, fraction = (n % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : String(whole);
+}
+
 /**
- * Look a transaction up.
- * @returns {Promise<null | { outputs: {address: string, sats: number}[], confirmed: boolean, time: number|null }>}
- *          null = the explorers do not know this transaction (yet).
+ * A chain observation, not proof that an order was paid or that a tx is final.
+ * Confirmations can be null if the tip height cannot be fetched.
+ * Outputs are kept once per output, including those without a standard address.
  */
 async function lookupTx(txid) {
-  const id = txid.trim().toLowerCase();
+  const id = String(txid ?? '').trim().toLowerCase();
+  if (!isTxid(id)) throw new Error('Invalid transaction ID');
+  function output(value, address) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid transaction output');
+    return { address: typeof address === 'string' ? address : '', sats: value };
+  }
+  function finish(outputs, confirmed, confirmations, time, source) {
+    sumSats(outputs);
+    return { outputs, confirmed, confirmations, time, source };
+  }
   const sources = [
     async () => {
       const tx = await getJson(`https://litecoinspace.org/api/tx/${id}`);
       if (!tx) return null;
-      return {
-        outputs: (tx.vout ?? []).map((o) => ({ address: o.scriptpubkey_address ?? '', sats: Number(o.value) || 0 })),
-        confirmed: Boolean(tx.status?.confirmed),
-        time: tx.status?.block_time ? tx.status.block_time * 1000 : null,
-      };
+      if (typeof tx.txid !== 'string' || tx.txid.toLowerCase() !== id) throw new Error('Explorer returned a different transaction');
+      if (!Array.isArray(tx.vout) || !tx.vout.length || typeof tx.status?.confirmed !== 'boolean') throw new Error('Invalid explorer response');
+      const outputs = tx.vout.map(o => output(o.value, o.scriptpubkey_address));
+      const confirmed = tx.status.confirmed;
+      let confirmations = confirmed ? null : 0;
+      if (confirmed && Number.isSafeInteger(tx.status.block_height) && tx.status.block_height >= 0) {
+        try {
+          const tip = await getJson('https://litecoinspace.org/api/blocks/tip/height');
+          if (Number.isSafeInteger(tip) && tip >= tx.status.block_height) confirmations = tip - tx.status.block_height + 1;
+        } catch { /* Keep the known confirmation status but never invent a count. */ }
+      }
+      const blockTime = tx.status.block_time;
+      return finish(outputs, confirmed, confirmations, Number.isFinite(blockTime) && blockTime > 0 ? blockTime * 1000 : null, 'LitecoinSpace');
     },
     async () => {
-      const tx = await getJson(`https://api.blockcypher.com/v1/ltc/main/txs/${id}?limit=50`);
+      const tx = await getJson(`https://api.blockcypher.com/v1/ltc/main/txs/${id}?limit=2000`);
       if (!tx) return null;
+      if (typeof tx.hash !== 'string' || tx.hash.toLowerCase() !== id) throw new Error('Explorer returned a different transaction');
+      // BlockCypher paginates outputs. Never report or verify an incomplete or conflicting set.
+      if (!Array.isArray(tx.outputs) || !Number.isSafeInteger(tx.vout_sz) || tx.vout_sz < 1 || tx.outputs.length !== tx.vout_sz || !Number.isSafeInteger(tx.confirmations) || tx.confirmations < 0 || tx.double_spend === true) throw new Error('Incomplete or invalid explorer response');
+      const outputs = tx.outputs.map(o => output(o.value, Array.isArray(o.addresses) && o.addresses.length === 1 ? o.addresses[0] : ''));
       const when = Date.parse(tx.confirmed ?? tx.received ?? '');
-      return {
-        outputs: (tx.outputs ?? []).flatMap((o) => (o.addresses ?? []).map((address) => ({ address, sats: Number(o.value) || 0 }))),
-        confirmed: Number(tx.confirmations) > 0,
-        time: Number.isNaN(when) ? null : when,
-      };
+      return finish(outputs, tx.confirmations > 0, tx.confirmations, Number.isNaN(when) ? null : when, 'BlockCypher');
     },
   ];
-
-  let lastError;
-  let answered = false;
+  let lastError, notFound = 0;
   for (const source of sources) {
-    try {
-      const tx = await source();
-      if (tx) return tx;
-      answered = true; // this explorer works but does not know the transaction
-    } catch (err) {
-      lastError = err;
-    }
+    try { const tx = await source(); if (tx) return tx; notFound++; }
+    catch (err) { lastError = err; }
   }
-  if (answered) return null;
-  throw new Error(`Block explorers are not reachable (${lastError?.message ?? 'unknown error'})`);
+  if (notFound === sources.length) return null;
+  throw new Error(`Block explorers are unavailable or returned incomplete data (${lastError?.message ?? 'unknown error'})`);
 }
 
-/** LTC that `tx` pays to `address`. */
-const paidTo = (tx, address) => tx.outputs.filter((o) => o.address === address).reduce((sum, o) => sum + o.sats, 0) / SATS;
+/** LTC that `tx` pays to `address`, retained for the shop integration. */
+const paidTo = (tx, address) => sumSats(tx.outputs, address) / SATS;
 
-module.exports = { isAddress, isTxid, extractTxid, getRates, toLtc, formatLtc, paymentUri, paymentQr, lookupTx, paidTo };
+module.exports = { isAddress, isTxid, extractTxid, getRates, toLtc, formatLtc, paymentUri, paymentQr, lookupTx, paidTo, sumSats, formatSats };

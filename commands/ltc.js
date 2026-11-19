@@ -1,11 +1,12 @@
 /**
  * /ltc qr <address> <amount> [currency]   Litecoin payment QR (amount in INR, USD or LTC)
  * /ltc price                              live LTC price
- * /ltc check <txid> [address]             look a transaction up on the blockchain
+ * /ltc check [txid] [address]             open a form or look a transaction up
  *
  * Also exports buildLtcPayload() for the shop order tickets.
  */
-const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, InteractionContextType, AttachmentBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { randomUUID } = require('node:crypto');
 const embeds = require('../utils/embeds');
 const ltc = require('../utils/ltc');
 const cards = require('../utils/cards');
@@ -63,7 +64,12 @@ module.exports = {
     .addSubcommand((s) => s.setName('price').setDescription('📈 Live Litecoin price.'))
     .addSubcommand((s) =>
       s.setName('check').setDescription('🔎 Look a Litecoin transaction up.')
-        .addStringOption((o) => o.setName('txid').setDescription('Transaction ID (hash) or the explorer link of the transaction').setRequired(true).setMaxLength(300))
+        .addStringOption((o) => o.setName('txid').setDescription('Optional transaction ID, /tx/ path or explorer link (otherwise a form opens)').setMaxLength(300))
+        .addStringOption((o) => o.setName('address').setDescription('Show how much this address received').setMaxLength(90)),
+    )
+    .addSubcommand((s) =>
+      s.setName('cheak').setDescription('🔎 Alias for /ltc check.')
+        .addStringOption((o) => o.setName('txid').setDescription('Optional transaction ID, /tx/ path or explorer link (otherwise a form opens)').setMaxLength(300))
         .addStringOption((o) => o.setName('address').setDescription('Show how much this address received').setMaxLength(90)),
     ),
 
@@ -104,34 +110,55 @@ module.exports = {
       return sendCard(interaction, embed, png, 'ltc-price.png');
     }
 
-    // check
-    const txid = ltc.extractTxid(interaction.options.getString('txid', true));
-    const address = interaction.options.getString('address')?.trim();
-    if (!ltc.isTxid(txid)) return fail('Invalid Transaction ID', 'A transaction ID (hash) has 64 characters (0-9, a-f). You can also paste the link of the transaction page.');
+    // Slash with no transaction ID opens a form. Existing direct / and ! usage still works.
+    let ctx = interaction, input = interaction.options.getString('txid'), address = interaction.options.getString('address')?.trim() ?? '';
     if (address && !ltc.isAddress(address)) return fail('Invalid Address', 'That does not look like a Litecoin address.');
-    await interaction.reply({ embeds: [embeds.loading(interaction, 'Looking the transaction up...')] });
-    let tx;
-    try {
-      tx = await ltc.lookupTx(txid);
-    } catch (err) {
-      console.error('[/ltc check]', err.message);
-      return interaction.editReply({ embeds: [embeds.error(interaction, 'Explorer Not Reachable', 'The block explorers did not answer. Please try again in a moment.')] });
+    if (!input) {
+      if (interaction.isPrefix) return fail('Use a Transaction ID or Slash Form', 'Use `!ltc check <txid>` or `/ltc check` to open the form.');
+      const modalId = `ltc_check_${randomUUID()}`;
+      const addressField = new TextInputBuilder().setCustomId('address').setLabel('Recipient LTC address (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(90)
+        .setPlaceholder('Add your address to see what it received');
+      if (address && ltc.isAddress(address)) addressField.setValue(address);
+      const modal = new ModalBuilder().setCustomId(modalId).setTitle('Check Litecoin Transaction').addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('txid').setLabel('Transaction ID, /tx/ path or link').setPlaceholder('/tx/… or paste the full transaction ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(300)),
+        new ActionRowBuilder().addComponents(addressField),
+      );
+      await interaction.showModal(modal);
+      try { ctx = await interaction.awaitModalSubmit({ time: 120_000, filter: s => s.customId === modalId && s.user.id === interaction.user.id }); }
+      catch { return; }
+      input = ctx.fields.getTextInputValue('txid');
+      address = ctx.fields.getTextInputValue('address').trim();
     }
-    if (!tx) return interaction.editReply({ embeds: [embeds.warn(interaction, 'Transaction Not Found', 'No Litecoin transaction with this ID was found. If it was just sent, wait a minute and try again.')] });
-    const total = tx.outputs.reduce((sum, o) => sum + o.sats, 0) / 1e8;
-    return interaction.editReply({
-      embeds: [
-        embeds.make(interaction, {
-          color: tx.confirmed ? embeds.COLORS.green : embeds.COLORS.gold,
-          title: tx.confirmed ? `${embeds.e('tick')} Transaction Confirmed` : '⏳ Transaction Unconfirmed',
-          fields: [
-            { name: '🪙 Total sent', value: `${ltc.formatLtc(total)} LTC`, inline: true },
-            ...(address ? [{ name: '📥 Received by the address', value: `**${ltc.formatLtc(ltc.paidTo(tx, address))} LTC**`, inline: true }] : []),
-            ...(tx.time ? [{ name: '🕒 Time', value: `<t:${Math.floor(tx.time / 1000)}:R>`, inline: true }] : []),
-            { name: '🔗 Explorer', value: `[Open transaction](https://litecoinspace.org/tx/${txid.toLowerCase()})` },
-          ],
-        }),
+    const failCheck = (title, text) => ctx.reply(embeds.ephemeral(embeds.error(ctx, title, text)));
+    const txid = ltc.extractTxid(input);
+    if (!ltc.isTxid(txid)) return failCheck('Invalid Transaction ID', 'Paste a 64-character transaction ID, `/tx/` path, or explorer link.');
+    if (address && !ltc.isAddress(address)) return failCheck('Invalid Address', 'That does not look like a Litecoin address.');
+    await ctx.reply({ embeds: [embeds.loading(ctx, 'Looking the transaction up...')] });
+    let tx;
+    try { tx = await ltc.lookupTx(txid); }
+    catch (err) {
+      console.error('[/ltc check]', err.message);
+      return ctx.editReply({ embeds: [embeds.error(ctx, 'Explorer Not Available', 'Could not get complete transaction data from the explorers. Try again later or check an explorer directly.')] });
+    }
+    if (!tx) return ctx.editReply({ embeds: [embeds.warn(ctx, 'Transaction Not Found', 'The explorers did not find this Litecoin transaction. If it was just sent, wait a minute and try again.')] });
+    const total = ltc.formatSats(ltc.sumSats(tx.outputs));
+    const amount = address ? ltc.formatSats(ltc.sumSats(tx.outputs, address)) : total;
+    const count = tx.confirmations == null ? 'Unavailable' : String(tx.confirmations);
+    const embed = embeds.make(ctx, {
+      color: tx.confirmed ? embeds.COLORS.green : embeds.COLORS.gold,
+      title: tx.confirmed ? `${embeds.e('tick')} Transaction Confirmed` : '⏳ Transaction Unconfirmed',
+      description: address ? 'Amount sent to the supplied address. Check the address and required confirmations yourself.' : 'Total outputs may include change and payments to other recipients. Add a recipient address to check its amount.',
+      fields: [
+        { name: address ? '📥 Received by address' : '🪙 Total transaction outputs', value: `**${amount} LTC**`, inline: true },
+        { name: '⛓️ Confirmations', value: `**${count}**`, inline: true },
+        ...(address ? [{ name: '🏦 Recipient address', value: `\`${address}\`` }, { name: '🪙 Total outputs (may include change)', value: `${total} LTC`, inline: true }] : []),
+        ...(tx.time ? [{ name: '🕒 Block / received time', value: `<t:${Math.floor(tx.time / 1000)}:R>`, inline: true }] : []),
+        { name: '🔗 Transaction ID', value: `\`${txid}\`\n[Open LitecoinSpace](https://litecoinspace.org/tx/${txid})` },
       ],
+      footer: `Source: ${tx.source} • Snapshot, not proof of order payment`,
     });
+    const png = cards.available() ? await cards.ltcTransactionCard({ txid, amount, total, address, confirmations: tx.confirmations, confirmed: tx.confirmed, source: tx.source, accent: branding.accent(ctx.guildId ?? ctx.guild.id) })
+      .catch(err => (console.error('[/ltc check] card:', err.message), null)) : null;
+    return sendCard(ctx, embed, png, 'ltc-transaction.png');
   },
 };
