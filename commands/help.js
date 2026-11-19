@@ -137,7 +137,7 @@ const CATEGORIES = [
       ['/upiset <upi_id> [name] | /upiclear', 'Save or remove your UPI ID for this server.'],
       ['/upiqr <amount> [upi_id] [name] [note]', 'Generate a UPI QR with an optional note (auto-splits above ₹2,000).'],
       ['/faq list | view | set | remove', 'View public FAQs; admins can manage them.'],
-      ['/ltc qr <address> <amount> [currency]', 'Litecoin payment QR at the live rate. Also `/ltc price`, `/ltc check <txid>`.'],
+      ['/ltc qr <address> <amount> [currency]', '🪙 Litecoin QR and price. Use `/ltc check` (or `/ltc cheak`) for the transaction form.'],
       ['/calc <expression>', 'Calculator, e.g. `1999 * 3 + 18%`.'],
       ['/afk <reason>', 'Set your AFK status. I will tell people who ping you.'],
     ],

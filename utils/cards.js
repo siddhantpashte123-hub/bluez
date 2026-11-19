@@ -667,4 +667,45 @@ async function invoiceDetailedCard({ serverName, icon, items, totalPaise, note, 
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, invoiceCard, invoiceDetailedCard, quality };
+/** On-chain observation. Amounts and confirmations are supplied by the lookup, never estimated. */
+async function ltcTransactionCard({ txid, amount, total, address, confirmations, confirmed, source, accent = '#5865f2' }) {
+  if (!canvasLib) return null;
+  const canvas = canvasLib.createCanvas(1200, 700), ctx = canvas.getContext('2d');
+  const bg = ctx.createLinearGradient(0, 0, 1200, 700);
+  bg.addColorStop(0, '#080e20'); bg.addColorStop(0.55, '#151c37'); bg.addColorStop(1, '#102b3d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 1200, 700);
+  glow(ctx, 1000, 20, 360, `${accent}55`); glow(ctx, 80, 660, 280, 'rgba(0,210,255,0.12)');
+  roundRect(ctx, 24, 24, 1152, 652, 30); ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(112, 110, 48, 0, 2 * Math.PI); ctx.fillStyle = '#b6cde9'; ctx.fill();
+  ctx.fillStyle = '#24395c'; ctx.font = `60px "${FONT.bold}"`; ctx.textAlign = 'center'; ctx.fillText('Ł', 112, 131); ctx.textAlign = 'left';
+  ctx.fillStyle = '#9fb6df'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('LITECOIN NETWORK', 185, 82);
+  ctx.fillStyle = '#ffffff'; ctx.font = `36px "${FONT.bold}"`; ctx.fillText('Transaction Check', 185, 126);
+  const state = confirmed ? 'CONFIRMED' : 'UNCONFIRMED';
+  roundRect(ctx, 917, 79, 210, 48, 14); ctx.fillStyle = confirmed ? 'rgba(46,229,157,0.14)' : 'rgba(255,201,77,0.15)'; ctx.fill();
+  ctx.fillStyle = confirmed ? '#8cf2c0' : '#ffda87'; ctx.font = `16px "${FONT.semi}"`; ctx.textAlign = 'center'; ctx.fillText(state, 1022, 109); ctx.textAlign = 'left';
+  roundRect(ctx, 62, 191, 670, 157, 22); ctx.fillStyle = 'rgba(5,12,29,0.58)'; ctx.fill();
+  ctx.fillStyle = '#a4b8dc'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText(address ? 'RECEIVED BY ADDRESS' : 'TOTAL TRANSACTION OUTPUTS', 91, 231);
+  let amountFont = 41;
+  do { ctx.font = `${amountFont}px "${FONT.bold}"`; if (ctx.measureText(`${amount} LTC`).width <= 600) break; } while (--amountFont >= 22);
+  ctx.fillStyle = '#ffffff'; ctx.fillText(`${amount} LTC`, 91, 284);
+  ctx.fillStyle = '#93a9d0'; ctx.font = `14px "${FONT.regular}"`; ctx.fillText(address ? `All outputs: ${total} LTC (may include change)` : 'Includes change and possibly other recipients.', 91, 319);
+  roundRect(ctx, 752, 191, 386, 157, 22); ctx.fillStyle = 'rgba(75,111,220,0.17)'; ctx.fill();
+  ctx.fillStyle = '#a4b8dc'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('CONFIRMATIONS', 781, 231);
+  ctx.fillStyle = '#ffffff'; ctx.font = `40px "${FONT.bold}"`; ctx.fillText(confirmations == null ? 'Unavailable' : String(confirmations), 781, 282);
+  ctx.fillStyle = '#93a9d0'; ctx.font = `14px "${FONT.regular}"`; ctx.fillText('Explorer snapshot; can change.', 781, 319);
+  ctx.fillStyle = '#9fb6df'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('TRANSACTION ID', 70, 395);
+  ctx.fillStyle = '#e9f0ff'; ctx.font = `20px "${FONT.semi}"`; ctx.fillText(txid.slice(0, 32), 70, 429); ctx.fillText(txid.slice(32), 70, 458);
+  if (address) {
+    ctx.fillStyle = '#9fb6df'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('RECIPIENT ADDRESS', 70, 503);
+    ctx.fillStyle = '#e9f0ff'; ctx.font = `18px "${FONT.semi}"`;
+    const lines = wrapPreservingText(address, 1040, str => ctx.measureText(str).width);
+    lines.forEach((line, i) => ctx.fillText(line, 70, 535 + i * 25));
+  }
+  ctx.fillStyle = '#afc3e4'; ctx.font = `14px "${FONT.regular}"`;
+  ctx.fillText('Check the recipient and required confirmations. This is not proof of an order payment.', 70, 622);
+  ctx.fillStyle = '#819ac5'; ctx.fillText(`Source: ${source}  •  Verify independently on an explorer`, 70, 648);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, invoiceCard, invoiceDetailedCard, ltcTransactionCard, quality };

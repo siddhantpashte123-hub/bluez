@@ -266,6 +266,14 @@ Settings and data of these features are stored in `data/*.json` (created automat
 
 ---
 
+## 🔎 Litecoin transaction check
+
+Run `/ltc check` (or `/ltc cheak`) to open a form and paste a 64-character transaction ID, a `/tx/<id>` path, or a transaction explorer link. You can optionally enter the recipient's Litecoin address. The result is public in the channel and shows an image plus readable text with the amount, confirmation count, transaction ID and explorer link. `/ltc check txid:<id> [address]` and `!ltc check <id>` also work directly; use `/ltc` for the form. Re-run the check to refresh the snapshot.
+
+- **Without a recipient address**, the amount is the total of all transaction outputs, which may include change and payments to other recipients. It is not necessarily the payment amount. Enter your recipient address to see what that address received.
+- Confirmation data comes from LitecoinSpace (transaction block height and current tip); BlockCypher is the fallback. If a confirmed transaction's tip cannot be fetched, its confirmation count is shown as unavailable, not guessed. Explorer data can lag or change, and confirmations are not an absolute guarantee of finality. Check the recipient, amount and your required confirmations independently. This command does not mark an order paid.
+- If neither explorer provides complete data, no amount is reported. Explorer APIs may be rate-limited or unavailable; the VPS must be able to reach `litecoinspace.org` and/or `api.blockcypher.com`. If image rendering or attachments are unavailable, readable embed details are shown instead.
+
 ## 🖼️ Image cards
 
 `/info ping`, `/level rank`, `/info bot`, `/ltc price` and `/fun coinflip` have drawn image cards. The last three also keep their readable embed details:
@@ -274,10 +282,11 @@ Settings and data of these features are stored in `data/*.json` (created automat
 ![Rank card](assets/preview/rank.png)
 ![Bot information card](assets/preview/bot-info.png)
 ![Litecoin price card](assets/preview/ltc-price.png)
+![Litecoin transaction card (illustrative)](assets/preview/ltc-transaction.png)
 ![Coin flip heads card](assets/preview/coinflip.png)
 ![Coin flip tails card](assets/preview/coinflip-tails.png)
 
-Preview values are illustrative, not live prices.
+Preview values are illustrative, not live prices or transaction data.
 
 - Drawn with `@napi-rs/canvas` (installed by `npm install`, no system packages needed). The Inter font is bundled in `assets/fonts`, so it also works on a VPS without any fonts.
 - If the package cannot be installed, these commands fall back to their normal embed. The three new cards also retry with an embed if an attachment cannot be sent. LTC prices use the existing provider and can be cached for up to 60 seconds.

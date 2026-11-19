@@ -233,7 +233,8 @@ Most commands also support the `!` prefix, for example `!calc 1+1`. Sensitive co
 | --- | --- |
 | `/ltc qr <address> <amount> [currency]` | 🪙 Generate a Litecoin payment QR code. |
 | `/ltc price` | 📈 Live Litecoin price. |
-| `/ltc check <txid> [address]` | 🔎 Look a Litecoin transaction up. |
+| `/ltc check [txid] [address]` | 🔎 Open the transaction form, or check an ID directly. |
+| `/ltc cheak [txid] [address]` | 🔎 Alias for `/ltc check`. |
 
 ## /mod
 
