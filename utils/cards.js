@@ -616,4 +616,55 @@ async function invoiceCard({ serverName, icon, product, amount, invoiceId, date,
   return canvas.encode('png');
 }
 
-module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, invoiceCard, quality };
+// Itemized invoice: keeps each item, line total and optional note visible in the PNG.
+async function invoiceDetailedCard({ serverName, icon, items, totalPaise, note, invoiceId, date, recipientId, status, accent = '#5865f2' }) {
+  if (!canvasLib) return null;
+  if (!Buffer.isBuffer(icon) || !icon.length) throw new Error('A server logo is required.');
+  const { formatPrice } = require('./invoice');
+  const logo = await canvasLib.loadImage(icon);
+  const panelHeight = 85 + items.length * 65, panelBottom = 215 + panelHeight;
+  const footerShift = note ? 0 : -60, height = panelBottom + 315 + footerShift;
+  const canvas = canvasLib.createCanvas(1200, height), ctx = canvas.getContext('2d');
+  const bg = ctx.createLinearGradient(0, 0, 1200, height);
+  bg.addColorStop(0, '#080e20'); bg.addColorStop(0.55, '#111a33'); bg.addColorStop(1, '#102b3d');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 1200, height);
+  glow(ctx, 1050, 65, 330, `${accent}55`);
+  roundRect(ctx, 24, 24, 1152, height - 48, 30); ctx.fillStyle = 'rgba(255,255,255,0.035)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.arc(118, 111, 55, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(logo, 63, 56, 110, 110); ctx.restore();
+  ctx.beginPath(); ctx.arc(118, 111, 57, 0, Math.PI * 2); ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+  function text(value, x, y, width, maxLines, initial, min, color) {
+    let lines, size;
+    for (size = initial; size >= min; size--) {
+      ctx.font = `${size}px "${FONT.semi}", "Noto Sans Devanagari"`;
+      lines = wrapPreservingText(String(value), width, s => ctx.measureText(s).width);
+      if (lines.length <= maxLines && lines.every(line => ctx.measureText(line).width <= width)) break;
+    }
+    if (size < min) throw new Error('Invoice text is too long to render clearly.');
+    ctx.fillStyle = color; lines.forEach((line, i) => ctx.fillText(line, x, y + i * (size + 4)));
+  }
+  ctx.fillStyle = '#a7b9e1'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('SERVER INVOICE', 194, 69);
+  text(serverName, 194, 103, 900, 3, 29, 17, '#ffffff');
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(62, 190, 1076, 1);
+  roundRect(ctx, 62, 215, 1076, panelHeight, 22); ctx.fillStyle = 'rgba(4,10,26,0.58)'; ctx.fill();
+  ctx.fillStyle = '#98abd2'; ctx.font = `15px "${FONT.semi}"`;
+  ctx.fillText('PRODUCT / SERVICE', 90, 251); ctx.fillText('QTY × UNIT PRICE', 670, 251); ctx.fillText('LINE TOTAL', 937, 251);
+  items.forEach((item, i) => {
+    const y = 286 + i * 65;
+    text(item.name, 90, y, 545, 2, 22, 10, '#ffffff');
+    text(`${item.quantity} × ${formatPrice(item.unitPaise)}`, 670, y, 240, 1, 17, 11, '#d1ddf4');
+    text(formatPrice(item.unitPaise * item.quantity), 937, y, 170, 1, 18, 11, '#ffffff');
+  });
+  ctx.fillStyle = '#a4bee7'; ctx.font = `15px "${FONT.semi}"`; ctx.fillText('TOTAL AMOUNT', 90, panelBottom + 49);
+  text(formatPrice(totalPaise), 90, panelBottom + 89, 480, 1, 34, 20, '#ffffff');
+  text(status === 'paid' ? 'PAID — STAFF MARKED (NOT VERIFIED)' : 'UNPAID — STAFF STATUS (NOT VERIFIED)', 620, panelBottom + 65, 480, 2, 16, 12, '#c1d8ff');
+  if (note) { ctx.fillStyle = '#98abd2'; ctx.font = `14px "${FONT.semi}"`; ctx.fillText('NOTE', 90, panelBottom + 128); text(note, 90, panelBottom + 154, 1020, 2, 17, 9, '#d1ddf4'); }
+  ctx.fillStyle = '#96aad4'; ctx.font = `13px "${FONT.semi}"`;
+  ctx.fillText('INVOICE ID', 90, panelBottom + 214 + footerShift); ctx.fillText('DATE (UTC)', 480, panelBottom + 214 + footerShift); ctx.fillText('RECIPIENT ID', 727, panelBottom + 214 + footerShift);
+  ctx.fillStyle = '#e5eeff'; ctx.font = `17px "${FONT.semi}"`;
+  ctx.fillText(invoiceId, 90, panelBottom + 241 + footerShift); ctx.fillText(date, 480, panelBottom + 241 + footerShift); ctx.fillText(recipientId, 727, panelBottom + 241 + footerShift);
+  ctx.fillStyle = '#a7badf'; ctx.font = `14px "${FONT.regular}"`; ctx.fillText('Payment is not verified. This is not a payment receipt.', 90, panelBottom + 275 + footerShift);
+  return canvas.encode('png');
+}
+
+module.exports = { available, pingCard, rankCard, welcomeCard, leaderboardCard, profileCard, orderCard, serverCard, levelUpCard, botInfoCard, ltcPriceCard, coinFlipCard, featureCard, calculatorCard, invoiceCard, invoiceDetailedCard, quality };

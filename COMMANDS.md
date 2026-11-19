@@ -185,7 +185,11 @@ Most commands also support the `!` prefix, for example `!calc 1+1`. Sensitive co
 
 | Command | Description |
 | --- | --- |
-| `/invoice` | Create a manual invoice and DM a server member (Manage Server). |
+| `/invoice [action] [invoice_id] [payment_status] [page]` | Create an itemized invoice, preview it privately, then confirm the recipient DM (Manage Server). |
+| `/invoice action:History [page]` | Privately list saved invoices (10 per page). |
+| `/invoice action:View invoice_id:<id>` | Privately view saved invoice details. |
+| `/invoice action:Resend invoice_id:<id>` | Immediately resend the saved invoice to its original server member. |
+| `/invoice action:Set manual status invoice_id:<id> payment_status:<paid or unpaid>` | Update the staff-set status; payment is not verified and the recipient is not notified. |
 
 ## /invited
 

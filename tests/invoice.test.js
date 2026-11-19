@@ -52,62 +52,106 @@ test('invoice card requires a real logo and renders PNG with multilingual text',
 });
 
 function fixture(opts = {}) {
-  const trace = [], sent = [];
-  const member = { id: recipientId, user: { id: recipientId, bot: !!opts.bot, send: async payload => { if (opts.dmError) throw Error('closed'); sent.push(payload); } } };
+  const trace = [], sent = [], replies = [];
+  const member = { id: recipientId, user: { id: recipientId, bot: !!opts.bot, send: async payload => { trace.push('send'); if (opts.dmError) throw Error('closed'); sent.push(payload); } } };
+  let fetchCount = 0;
   const guild = { id: gid, name: 'Old Name', iconURL: () => opts.noIcon ? null : `https://cdn.discordapp.com/icons/${gid}/abc.png`,
     fetch: async () => { if (opts.guildError) throw Error('offline'); return { ...guild, name: 'Current Server' }; },
-    members: { fetch: async id => id === issuerId ? { permissions: opts.revoked ? denied : allowed } : (opts.notMember ? null : member) } };
-  let modalJson, prompt, result;
+    members: { fetch: async query => (typeof query === 'object' ? query.user : query) === issuerId ? { permissions: opts.revoked || (opts.revokeAtConfirm && ++fetchCount > 1) ? denied : allowed } : (opts.notMember ? null : member) } };
+  let modalJson, result, previewPayload, selectionPrompt;
   const msg = { awaitMessageComponent: async config => {
-    assert.equal(config.componentType, ComponentType.UserSelect);
-    if (opts.selectTimeout) throw Error('timeout');
-    const customId = prompt.components[0].toJSON().components[0].custom_id;
-    const c = { customId, user: { id: issuerId }, memberPermissions: opts.selectionDenied ? denied : allowed, values: [recipientId], update: async p => { trace.push('select-update'); result = p; } };
-    assert.equal(config.filter(c), true); assert.equal(config.filter({ ...c, user: { id: recipientId } }), false);
+    if (config.componentType === ComponentType.UserSelect) {
+      if (opts.selectTimeout) throw Error('timeout');
+      const customId = selectionPrompt.components[0].toJSON().components[0].custom_id;
+      const c = { customId, user: { id: issuerId }, memberPermissions: opts.selectionDenied ? denied : allowed, values: [recipientId], update: async p => { trace.push('selection'); result = p; } };
+      assert.ok(config.filter(c)); assert.equal(config.filter({ ...c, user: { id: recipientId } }), false); return c;
+    }
+    assert.equal(config.componentType, ComponentType.Button);
+    if (opts.confirmTimeout) throw Error('timeout');
+    const buttons = previewPayload.components[0].toJSON().components;
+    const customId = buttons[opts.cancel ? 1 : 0].custom_id;
+    const c = { customId, user: { id: issuerId }, memberPermissions: opts.confirmDenied ? denied : allowed, update: async p => { trace.push('confirmed'); result = p; } };
+    assert.ok(config.filter(c)); assert.equal(config.filter({ ...c, user: { id: recipientId } }), false);
+    assert.equal(sent.length, 0, 'no DM before confirmation');
     return c;
   } };
+  const fields = { product: opts.product ?? 'Premium Hosting', price: opts.price ?? '1499.50', quantity: opts.quantity ?? '', extra: opts.extra ?? '', note: opts.note ?? '' };
   const form = { client, guildId: gid, user: { id: issuerId }, memberPermissions: opts.formDenied ? denied : allowed,
-    fields: { getTextInputValue: k => k === 'product' ? (opts.product ?? 'Premium Hosting') : (opts.price ?? '1499.50') },
+    fields: { getTextInputValue: k => fields[k] },
     reply: async p => { result = p; }, deferReply: async p => { trace.push(`defer:${p.flags}`); },
-    editReply: async p => { result = p; if (p.components?.length) { prompt = p; return msg; } } };
+    editReply: async p => { result = p; replies.push(p); if (p.components?.length) { if (p.files?.length) previewPayload = p; else selectionPrompt = p; return msg; } } };
   const i = { client, guild, guildId: gid, user: { id: issuerId }, memberPermissions: opts.initialDenied ? denied : allowed,
-    reply: async p => { result = p; }, showModal: async modal => { modalJson = modal.toJSON(); trace.push('modal'); },
-    awaitModalSubmit: async config => { if (opts.modalTimeout) throw Error('expired'); const submission = { ...form, customId: modalJson.custom_id }; assert.equal(config.filter(submission), true); assert.equal(config.filter({ ...submission, user: { id: recipientId } }), false); return form; } };
-  return { i, trace, sent, getResult: () => result, getPrompt: () => prompt, getModal: () => modalJson };
+    options: { getString: name => opts.options?.[name] ?? null, getInteger: name => opts.options?.[name] ?? null },
+    reply: async p => { result = p; }, deferReply: async p => { trace.push(`defer:${p.flags}`); }, editReply: async p => { result = p; },
+    showModal: async modal => { modalJson = modal.toJSON(); trace.push('modal'); },
+    awaitModalSubmit: async config => { if (opts.modalTimeout) throw Error('expired'); const submission = { ...form, customId: modalJson.custom_id }; assert.ok(config.filter(submission)); assert.equal(config.filter({ ...submission, user: { id: recipientId } }), false); return form; } };
+  return { i, trace, sent, replies, getResult: () => result, getPreview: () => previewPayload, getPrompt: () => selectionPrompt, getModal: () => modalJson };
 }
 async function withMocks(fn, opts = {}) {
-  const old = { available: cards.available, card: cards.invoiceCard, icon: invoice.fetchIcon };
-  let rendered;
+  const store = require('../utils/invoice-store');
+  const old = { available: cards.available, card: cards.invoiceDetailedCard, icon: invoice.fetchIcon, ...Object.fromEntries(['get','list','create','update'].map(k => [k, store[k]])) };
+  let rendered; const records = {};
   try {
     cards.available = () => !opts.noCanvas;
-    cards.invoiceCard = async data => { rendered = data; if (opts.renderError) throw Error('bad image'); return Buffer.from('fake PNG'); };
-    invoice.fetchIcon = async guild => { if (opts.iconError) throw Error('network'); return Buffer.from('logo'); };
-    const f = fixture(opts); await fn(f, () => rendered);
-  } finally { cards.available = old.available; cards.invoiceCard = old.card; invoice.fetchIcon = old.icon; }
+    cards.invoiceDetailedCard = async data => { rendered = data; if (opts.renderError) throw Error('bad image'); return Buffer.from('fake PNG'); };
+    invoice.fetchIcon = async () => { if (opts.iconError) throw Error('network'); return Buffer.from('logo'); };
+    store.get = (g, id) => records[g]?.[id] ?? null;
+    store.list = g => Object.values(records[g] ?? {});
+    store.create = (g, r) => { if (opts.storeError) throw Error('storage'); (records[g] ??= {})[r.id] = structuredClone(r); };
+    store.update = (g, id, fields) => { if (opts.updateError) throw Error('storage'); const r = records[g]?.[id]; if (!r) return null; Object.assign(r, fields); return r; };
+    const f = fixture(opts); await fn(f, () => rendered, records);
+  } finally { cards.available = old.available; cards.invoiceDetailedCard = old.card; invoice.fetchIcon = old.icon; for (const k of ['get','list','create','update']) store[k] = old[k]; }
 }
 
-test('form then private recipient picker sends one branded image DM with exact amount', async () => {
-  await withMocks(async (f, getRendered) => {
+test('private form, selection, preview and confirmation send an itemized branded DM', async () => {
+  await withMocks(async (f, getRendered, records) => {
     await command.execute(f.i);
     assert.equal(f.trace[0], 'modal'); assert.equal(f.trace[1], 'defer:64');
-    const components = f.getModal().components; assert.equal(components.length, 2); assert.deepEqual(components.map(r => r.components[0].custom_id), ['product', 'price']);
-    assert.match(JSON.stringify(f.getPrompt()), /Selecting them will send/);
+    assert.deepEqual(f.getModal().components.map(r => r.components[0].custom_id), ['product','price','quantity','extra','note']);
+    assert.match(JSON.stringify(f.getPrompt()), /preview and confirm/);
+    assert.match(f.getPreview().content, /Premium Hosting/); assert.equal(f.getPreview().files.length, 1);
     assert.equal(f.sent.length, 1); const p = f.sent[0], data = getRendered();
-    assert.equal(data.serverName, 'Current Server'); assert.equal(data.product, 'Premium Hosting'); assert.equal(data.amount, '₹1,499.50'); assert.equal(data.recipientId, recipientId); assert.deepEqual(data.icon, Buffer.from('logo'));
-    assert.match(p.content, /Current Server/); assert.match(p.content, /₹1,499.50/); assert.match(p.content, /Payment is not verified/); assert.equal(p.files.length, 1); assert.match(p.files[0].name, /^INV-[A-F0-9]{16}\.png$/); assert.match(p.files[0].description, /Premium Hosting/); assert.deepEqual(p.allowedMentions, { parse: [] });
-    assert.match(JSON.stringify(f.getResult()), /Invoice Sent/);
-  });
+    assert.equal(data.serverName, 'Current Server'); assert.equal(data.items.length, 2); assert.equal(data.totalPaise, 350000); assert.equal(data.recipientId, recipientId); assert.deepEqual(data.icon, Buffer.from('logo'));
+    assert.match(p.content, /₹3,500.00/); assert.match(p.content, /Setup/); assert.match(p.content, /Please pay/); assert.match(p.content, /Payment is not verified/); assert.equal(p.files.length, 1); assert.deepEqual(p.allowedMentions, { parse: [] });
+    assert.match(JSON.stringify(f.getResult()), /Invoice Sent/); assert.equal(Object.values(records[gid])[0].delivery, 'sent');
+  }, { quantity: '2', extra: 'Setup | 1 | 501', note: 'Please pay' });
 });
 
-test('missing permission, prefix use and expired forms never send anything', async () => {
-  for (const opts of [{ initialDenied: true }, { formDenied: true }, { selectionDenied: true }, { revoked: true }, { modalTimeout: true }, { selectTimeout: true }]) await withMocks(async f => { await command.execute(f.i); assert.equal(f.sent.length, 0); }, opts);
+test('validation, cancellation, permissions and failures never send publicly or claim success', async () => {
+  for (const opts of [{ initialDenied: true }, { formDenied: true }, { selectionDenied: true }, { revoked: true }, { revokeAtConfirm: true }, { confirmDenied: true }, { modalTimeout: true }, { selectTimeout: true }, { confirmTimeout: true }, { cancel: true }, { product: '' }, { price: '0' }, { quantity: '0' }, { extra: 'wrong' }, { noCanvas: true }, { noIcon: true }, { notMember: true }, { bot: true }, { guildError: true }, { iconError: true }, { renderError: true }, { storeError: true }, { dmError: true }]) {
+    await withMocks(async (f, getRendered, records) => { await command.execute(f.i); assert.equal(f.sent.length, 0, JSON.stringify(opts)); assert.doesNotMatch(JSON.stringify(f.getResult()) ?? '', /Invoice Sent/); if (opts.dmError) assert.equal(Object.values(records[gid])[0].delivery, 'uncertain'); else assert.equal(Object.keys(records).length, 0); }, opts);
+  }
   await withMocks(async f => { f.i.isPrefix = true; await command.execute(f.i); assert.match(JSON.stringify(f.getResult()), /Use Slash Command/); assert.equal(f.sent.length, 0); });
 });
 
-test('validation, logo, canvas, member, render and DM failures never report success or send publicly', async () => {
-  for (const opts of [{ product: '' }, { price: '0' }, { noCanvas: true }, { noIcon: true }, { notMember: true }, { bot: true }, { guildError: true }, { iconError: true }, { renderError: true }, { dmError: true }]) {
-    await withMocks(async f => { await command.execute(f.i); assert.equal(f.sent.length, 0, JSON.stringify(opts)); assert.doesNotMatch(JSON.stringify(f.getResult()), /Invoice Sent/); }, opts);
-  }
+test('item quantities and totals use exact paise and validate notes and limits', () => {
+  const result = invoice.parseItems('One', '0.10', '3', 'Two | 2 | 0.20');
+  assert.equal(result.totalPaise, 70); assert.equal(result.items.length, 2);
+  for (const q of ['0', '-1', '1.5', '0001', '10000']) assert.throws(() => invoice.parseItems('x', '1', q));
+  assert.throws(() => invoice.parseItems('x', '99999999.99', '2'), /total/);
+  assert.throws(() => invoice.parseItems('x', '1', '1', 'bad'));
+  assert.throws(() => invoice.parseItems('x', '1', '1', Array(5).fill('x | 1 | 1').join('\n')));
+  assert.equal(invoice.noteText(' hello '), 'hello'); assert.throws(() => invoice.noteText('x\ny')); assert.throws(() => invoice.noteText('x'.repeat(201)));
+});
+
+test('history, manual status and resend are private, server scoped, and not verification', async () => {
+  await withMocks(async (f, getRendered, records) => {
+    await command.execute(f.i); const id = Object.keys(records[gid])[0];
+    f.i.options.getString = k => ({ action: 'history' })[k] ?? null;
+    await command.execute(f.i); assert.equal(f.getResult().flags, 64); assert.match(JSON.stringify(f.getResult()), new RegExp(id));
+    f.i.options.getString = k => ({ action: 'view', invoice_id: id })[k] ?? null;
+    await command.execute(f.i); assert.equal(f.getResult().flags, 64); assert.match(f.getResult().content, /Premium Hosting/);
+    f.i.options.getString = k => ({ action: 'status', invoice_id: id, payment_status: 'paid' })[k] ?? null;
+    await command.execute(f.i); assert.equal(records[gid][id].status, 'paid'); assert.match(JSON.stringify(f.getResult()), /not verified/i);
+    f.i.options.getString = k => ({ action: 'resend', invoice_id: id })[k] ?? null;
+    await command.execute(f.i); assert.equal(f.sent.length, 2); assert.match(f.sent[1].content, /Paid \(staff marked, not verified\)/); assert.equal(getRendered().status, 'paid');
+    f.i.guildId = '999999999999999999'; f.i.options.getString = k => ({ action: 'status', invoice_id: id, payment_status: 'unpaid' })[k] ?? null;
+    await command.execute(f.i); assert.equal(records[gid][id].status, 'paid'); assert.match(JSON.stringify(f.getResult()), /Not Found/);
+  });
+});
+
+test('if saving sent state fails the user is told the DM was sent', async () => {
+  await withMocks(async (f, _, records) => { await command.execute(f.i); assert.equal(f.sent.length, 1); assert.match(JSON.stringify(f.getResult()), /Sent, History Not Updated/); assert.equal(Object.values(records[gid])[0].delivery, 'uncertain'); }, { updateError: true });
 });
 
 test('compact landscape card preserves full long names, product, amounts and server logo', async () => {
@@ -145,14 +189,8 @@ test('word-aware wrapping preserves every grapheme and breaks long names safely'
   assert.equal(parts.join(''), original); assert.ok(parts[0].startsWith('👩‍💻'));
 });
 
-test('compact DM safely escapes formatted product while preserving invoice details', async () => {
-  await withMocks(async (f, getRendered) => {
-    await command.execute(f.i);
-    const p = f.sent[0]; assert.match(p.content, /\\\*Hosting\\\*/); assert.match(p.content, /@everyone/);
-    assert.match(p.content, /Server 123456789012345678/); assert.match(p.content, /Issuer 223456789012345678/);
-    assert.match(p.content, /Payment is not verified/); assert.deepEqual(p.allowedMentions, { parse: [] });
-    assert.equal(getRendered().product, '*Hosting* @everyone'); assert.match(p.files[0].description, /\*Hosting\* @everyone/);
-  }, { product: '*Hosting* @everyone' });
+test('itemized DM escapes user markdown and disables mentions', async () => {
+  await withMocks(async f => { await command.execute(f.i); const p = f.sent[0]; assert.match(p.content, /\\\*Hosting\\\*/); assert.match(p.content, /@everyone/); assert.deepEqual(p.allowedMentions, { parse: [] }); }, { product: '*Hosting* @everyone' });
 });
 
 test('maximum supported wide server and product names still render without truncation', async () => {
@@ -161,4 +199,56 @@ test('maximum supported wide server and product names still render without trunc
   const canvas = createCanvas(16, 16); canvas.getContext('2d').fillRect(0, 0, 16, 16);
   const img = await cards.invoiceCard({ serverName: 'W'.repeat(100), product: 'W'.repeat(100), icon: await canvas.encode('png'), amount: '₹9,99,99,999.99', invoiceId: 'INV-0123456789ABCDEF', date: '2026-11-19', recipientId });
   assert.equal(img.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+});
+
+
+test('detailed card retains all five full item names and note, using responsive height', async () => {
+  if (!cards.available()) return;
+  const canvas = require('@napi-rs/canvas'), { PNG } = require('pngjs');
+  const seed = canvas.createCanvas(16, 16); seed.getContext('2d').fillRect(0, 0, 16, 16);
+  const icon = await seed.encode('png'), drawn = [], original = canvas.createCanvas;
+  const items = Array.from({ length: 5 }, (_, i) => ({ name: String(i) + 'W'.repeat(99), quantity: 1, unitPaise: 100 }));
+  const note = 'W'.repeat(200);
+  const args = { serverName: 'W'.repeat(100), icon, items, totalPaise: 500, note, invoiceId: 'INV-0123456789ABCDEF', date: '2026-11-11', recipientId, status: 'paid' };
+  try {
+    canvas.createCanvas = (...args) => { const surface = original(...args), ctx = surface.getContext('2d'), old = ctx.fillText.bind(ctx); ctx.fillText = (...params) => { drawn.push(params[0]); return old(...params); }; return surface; };
+    const image = PNG.sync.read(await cards.invoiceDetailedCard(args)); assert.equal(image.width, 1200); assert.equal(image.height, 940);
+    for (const item of items) { const fragments = drawn.filter(v => v && (v === item.name || item.name.includes(v)) && v.startsWith(item.name[0])); assert.ok(fragments.length, `item ${item.name[0]} rendered`); }
+    assert.ok(drawn.includes('PAID — STAFF MARKED (NOT VERIFIED)'));
+    const smaller = PNG.sync.read(await cards.invoiceDetailedCard({ ...args, items: items.slice(0, 1), note: '' })); assert.equal(smaller.height, 620);
+  } finally { canvas.createCanvas = original; }
+});
+
+test('invoice store persists server-isolated data and refuses corrupt input', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const originalDir = db.DATA_DIR, modulePath = require.resolve('../utils/invoice-store'), originalModule = require.cache[modulePath];
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'invoice-test-'));
+  try {
+    db.DATA_DIR = temp; delete require.cache[modulePath]; const store = require('../utils/invoice-store');
+    const record = { id: 'INV-0123456789ABCDEF', createdAt: new Date().toISOString(), status: 'unpaid', note: 'private' };
+    store.create(gid, record); assert.equal(store.get(gid, record.id).note, 'private'); assert.equal(store.get('other', record.id), null);
+    assert.throws(() => store.create(gid, record), /already exists/);
+    store.update(gid, record.id, { status: 'paid' }); assert.equal(store.list(gid)[0].status, 'paid');
+    assert.equal(fs.statSync(path.join(temp, 'invoices.json')).mode & 0o777, 0o600);
+    fs.writeFileSync(path.join(temp, 'invoices.json'), '{broken'); assert.throws(() => store.list(gid), /unavailable/); assert.throws(() => store.create(gid, record), /unavailable/);
+  } finally { db.DATA_DIR = originalDir; require.cache[modulePath] = originalModule; fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('history pages, status permissions and uncertain resend are handled privately', async () => {
+  await withMocks(async (f, _, records) => {
+    await command.execute(f.i); const id = Object.keys(records[gid])[0], base = records[gid][id];
+    for (let n = 1; n <= 10; n++) records[gid][`INV-${String(n).padStart(16, '0')}`] = { ...base, id: `INV-${String(n).padStart(16, '0')}` };
+    f.i.options.getString = k => ({ action: 'history' })[k] ?? null;
+    f.i.options.getInteger = k => k === 'page' ? 2 : null;
+    await command.execute(f.i); assert.equal(f.getResult().flags, 64); assert.match(JSON.stringify(f.getResult()), /Page 2\/2/);
+    f.i.options.getInteger = () => null;
+    f.i.options.getString = k => ({ action: 'status', invoice_id: id, payment_status: 'paid' })[k] ?? null;
+    f.i.memberPermissions = denied; await command.execute(f.i); assert.equal(records[gid][id].status, 'unpaid'); assert.match(JSON.stringify(f.getResult()), /Missing Permission/);
+    f.i.memberPermissions = allowed;
+    f.i.options.getString = k => ({ action: 'status', invoice_id: id, payment_status: 'bogus' })[k] ?? null;
+    await command.execute(f.i); assert.equal(records[gid][id].status, 'unpaid');
+    f.i.options.getString = k => ({ action: 'resend', invoice_id: id })[k] ?? null;
+    const recipient = await f.i.guild.members.fetch(recipientId); recipient.user.send = async () => { throw Error('closed'); };
+    await command.execute(f.i); assert.equal(records[gid][id].delivery, 'uncertain'); assert.match(JSON.stringify(f.getResult()), /Resend Not Confirmed/);
+  });
 });
