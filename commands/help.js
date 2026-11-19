@@ -113,6 +113,7 @@ const CATEGORIES = [
     color: embeds.COLORS.cyan,
     blurb: 'Sell products with UPI order tickets.',
     commands: [
+      ['/invoice', 'Create a branded invoice and privately send it to a server member (admin).'],
       ['/shop setup <upi_id> <name>', 'UPI details used for the order QR (admins).'],
       ['/shop ltc [address]', 'Accept Litecoin in order tickets (checked on the blockchain).'],
       ['/shop add | remove | stock', 'Manage products, prices and stock (admins).'],

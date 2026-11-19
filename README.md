@@ -391,3 +391,11 @@ Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and 
 - `/quickreply set key:hello text:Hello!` and `/quickreply remove key:hello` require Manage Server. Inside a tracked ticket, authorized ticket staff can use private `/quickreply list` and public `/quickreply send key:hello`. Text is visible to everyone in the ticket, with mentions disabled; never store secrets. Ticket owners cannot use staff quick replies, even if they are staff. The `!` prefix supports set/remove/send, but prefix messages and their arguments are public; list is slash-only.
 - `/shop style color:#5865F2 label:My Shop` customizes `/shop product` cards and their embed fallback. Manage Server permission is required. `/shop style reset:true` restores defaults. Other shop panels and cards are not affected.
 - FAQ and quick reply data use `data/faq.json` and `data/quickreplies.json`; include them when backing up or migrating the bot's `data/` directory.
+
+## Manual invoice generator
+
+A member with **Manage Server** can run `/invoice`, enter a product name and INR price in the private form, then select one server member. Selecting the member immediately sends a branded **PNG invoice** to that member's DMs. The invoice includes the current server name and server icon, product, amount, date, invoice ID and recipient ID. The sender receives a private success or failure message; the product and price also appear as text in the DM for accessibility.
+
+- A server icon is required. If the icon cannot be downloaded, optional `@napi-rs/canvas` is missing, image rendering fails, the selected user is not a human member, or permissions change, the invoice is not sent. If a DM fails, delivery may be uncertain: the recipient may need to enable DMs from server members; check with them before retrying. No invoice is posted publicly as a fallback.
+- `/invoice` is slash-only because prefix messages cannot open private forms. The price accepts ₹0.01–₹99,999,999.99 with up to two decimal places. The image includes Latin and Devanagari fonts; other scripts or emoji may depend on the VPS fonts, while the DM retains the full original text.
+- This is a manual invoice, **not a payment receipt or payment verification**, and it does not create or modify shop orders, collect payments, calculate taxes, or save invoice records. Existing shop checkout remains unchanged.

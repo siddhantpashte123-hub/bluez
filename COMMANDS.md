@@ -181,6 +181,12 @@ Most commands also support the `!` prefix, for example `!calc 1+1`. Sensitive co
 | `/info ping` | 🏓 Check how fast the bot responds. |
 | `/info bot` | 🤖 Information about the bot. |
 
+## /invoice
+
+| Command | Description |
+| --- | --- |
+| `/invoice` | Create a manual invoice and DM a server member (Manage Server). |
+
 ## /invited
 
 | Command | Description |
