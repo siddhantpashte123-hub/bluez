@@ -394,7 +394,7 @@ Run `node --test tests/*.test.js` for the mock suite. Real Discord, payment and 
 
 ## Manual invoice generator
 
-A member with **Manage Server** can run `/invoice`, enter a product name and INR price in the private form, then select one server member. Selecting the member immediately sends a branded **PNG invoice** to that member's DMs. The invoice includes the current server name and server icon, product, amount, date, invoice ID and recipient ID. The sender receives a private success or failure message; the product and price also appear as text in the DM for accessibility.
+A member with **Manage Server** can run `/invoice`, enter a product name and INR price in the private form, then select one server member. Selecting the member immediately sends a branded, compact landscape **PNG invoice** to that member's DMs. The invoice includes the current server name and server icon, product, amount, date, invoice ID and recipient ID. The sender receives a private success or failure message; the product and price also appear as text in the DM for accessibility.
 
 - A server icon is required. If the icon cannot be downloaded, optional `@napi-rs/canvas` is missing, image rendering fails, the selected user is not a human member, or permissions change, the invoice is not sent. If a DM fails, delivery may be uncertain: the recipient may need to enable DMs from server members; check with them before retrying. No invoice is posted publicly as a fallback.
 - `/invoice` is slash-only because prefix messages cannot open private forms. The price accepts ₹0.01–₹99,999,999.99 with up to two decimal places. The image includes Latin and Devanagari fonts; other scripts or emoji may depend on the VPS fonts, while the DM retains the full original text.

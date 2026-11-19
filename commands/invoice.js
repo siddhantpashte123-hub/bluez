@@ -1,5 +1,5 @@
 /** Private manual invoice workflow: form -> recipient selector -> branded image DM. */
-const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, ComponentType, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, InteractionContextType, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, ComponentType, AttachmentBuilder, escapeMarkdown } = require('discord.js');
 const { randomUUID, randomBytes } = require('node:crypto');
 const embeds = require('../utils/embeds');
 const invoice = require('../utils/invoice');
@@ -61,7 +61,7 @@ module.exports = {
       if (!image) throw new Error('Image generation is unavailable.');
     } catch { return form.editReply({ embeds: [embeds.error(form, 'Invoice Image Failed', 'Could not load the current server name and logo or render the invoice. Nothing was sent.')], components: [] }); }
     const description = `Invoice ${invoiceId}. Server: ${currentGuild.name}. Product: ${product}. Amount: ${amount}. Recipient ID: ${member.id}. Payment not verified.`;
-    const content = `🧾 Manual invoice from ${currentGuild.name}\nServer ID: ${guild.id}\nInvoice: ${invoiceId}\nProduct: ${product}\nAmount: ${amount}\nIssued by user ID: ${interaction.user.id}\n\nPayment is not verified. Check the details with server staff.`;
+    const content = `🧾 **Invoice from ${escapeMarkdown(currentGuild.name)}**\n**Product:** ${escapeMarkdown(product)}  •  **Total:** ${amount}\n-# Invoice ${invoiceId}  •  Server ${guild.id}  •  Issuer ${interaction.user.id}\n-# Payment is not verified. This is not a receipt; check with server staff.`;
     try {
       await member.user.send({ content, files: [new AttachmentBuilder(image, { name: `${invoiceId}.png`, description: description.slice(0, 1024) })], allowedMentions: { parse: [] } });
     } catch {
